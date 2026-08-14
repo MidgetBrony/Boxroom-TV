@@ -26,11 +26,14 @@ Inside Boxroom-TV, there should be 2 folders labelled "Media" and "Video Library
 All videos you simply want playable should be in the "Media" folder.
 
 If you wish to have a movie or show in a shelvable case, make a folder for it in the "Video Library" folder.
+
 (Example: For the movie Rango, the files should be \Boxroom-TV\VideoLibrary\Rango\Rango.mp4)
+
 Covers work the same as CDs, simply leave a cover.jpg in the same folder as the movie/show.
 
 The player is capable of playing multiple files from a single folder.
 If you wish to have TV shows in boxes, it is highly recommended you make boxes for entire seasons, not per episode.
+
 (Example: For Smiling Friends, you should have a box made for Smiling Friends Season 1 and place all episodes in the folder. There is buttons to switch episode.
 The files should look like \Boxroom-TV\VideoLibrary\SmilingFriends\SmilingFriends1.mp4, SmilingFriends2.mp4, etc.)
 
