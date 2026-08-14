@@ -23,6 +23,7 @@ Drop Boxrooms-TV.dll in your Mods folder.
 Exit the game and there should be a new "Boxroom-TV" folder in the Mods folder. 
 
 Inside Boxroom-TV, there should be 2 folders labelled "Media" and "Video Library"
+**If the "Media" folder doesn't auto-generate, create it yourself.**
 
 All videos you simply want playable should be in the "Media" folder.
 
