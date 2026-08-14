@@ -1,5 +1,5 @@
-# boxrooms-tv
-A simple TV mod for Boxrooms that enables custom MP4 playback on the in-game flatscreen and boxy CRT. Not compatible with any modded TV models.
+# Boxroom-TV
+A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM/) that enables custom MP4 playback on the in-game flatscreen and boxy CRT. Not compatible with any modded TV models.
 
 
 CREDIT FOR THIS MOD MAINLY GOES TO MIDGETBRONY ON THE DISCORD
@@ -16,7 +16,7 @@ Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxrooms.
 
 Launch the game to create your Mods folder. If one doesn't appear, create one yourself. 
 
-Drop Boxrooms-TV.dll in your Mods folder. 
+Drop Boxroom-TV.dll in your Mods folder. 
 
 **Run the game and left-click a TV to generate necessary files, you need 2 folders that the game will register MP4 files from.**
 
