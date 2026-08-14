@@ -2,19 +2,21 @@
 A simple TV mod for Boxrooms that enables custom MP4 playback on the in-game flatscreen and boxy CRT. Not compatible with any modded TV models.
 
 
-NOTE: I AM NOT A PROGRAMMER. CREDIT FOR THIS MOD MAINLY GOES TO MIDGETBRONY ON THE DISCORD AND CLAUDE AI. ANY BUGS WILL MOST LIKELY BE UNSOLVABLE TO ME. YOU HAVE BEEN WARNED.
+CREDIT FOR THIS MOD MAINLY GOES TO MIDGETBRONY ON THE DISCORD
+
+**NOTE: TV VOLUME IS CONTROLLED VIA THE TV, NOT THE GAME VOLUME.**
 
 Boxrooms TV
 
-INSTALLATION:
+<h1>INSTALLATION:</h1>
 
-Install MelonLoader 7.3 for Boxrooms. 
+Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxrooms. 
 
 Launch the game to create your Mods folder. If one doesn't appear, create one yourself. 
 
 Drop Boxrooms-TV.dll in your Mods folder. 
 
-Run the game once to generate necessary files, you need 2 folders that the game will register MP4 files from.
+**Run the game once to generate necessary files, you need 2 folders that the game will register MP4 files from.**
 
 Exit the game and there should be a new "Boxroom-TV" folder in the Mods folder. 
 
@@ -33,10 +35,13 @@ The files should look like \Boxroom-TV\VideoLibrary\SmilingFriends\SmilingFriend
 
 The player is also capable of playing direct media links, such as those from Discord. The link should end in .mp4 . Simply paste into the URL box and press "Load". 
 
-HOW TO USE: 
+<h1>HOW TO USE:</h1>
 
-If you've imported media into the "Video Library" folder, press V to spawn the Movie Box. Your shelvable media will be in there.
+If you've imported media into the "Video Library" folder, **press V to spawn the Movie Box.** Your shelvable media will be in there.
 
 To play a video, simply left-click a TV with the case. It should start the video automatically. Left clicking a TV playing a video with an empty hand will open the controls menu.
-There is a Media folder browser button as well as the ability to control volume and scrub through videos. 
+You can also **press T while looking at a TV to open the controls.** 
+There is a Media folder browser button as well as the ability to control volume and scrub through videos. '
+
+The player should save its place between game launches.
 
