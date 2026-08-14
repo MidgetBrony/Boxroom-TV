@@ -8,6 +8,9 @@ A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM
 
 **NOTE: TO TRANSFER YOUR SAVE ROOM TO ANOTHER USER, YOU WILL NEED TO PROVIDE THE OTHER USER WITH THE \Boxroom-TV\VideoAppIds.json FILE FROM YOUR FOLDER**
 
+**NOT REQUIRED BUT I HIGHLY RECOMMEND USING [HANDBRAKE](https://handbrake.fr) TO CONVERT ANY FILES INTO THE EXACT MP4 THE MOD REQUIRES. INCOMPATIBLE CODECS WILL RESULT IN A TEST SCREEN.**
+
+
 <h1>INSTALLATION:</h1>
 
 Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxrooms. 
