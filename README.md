@@ -23,9 +23,9 @@ Exit the game and there should be a new "Boxroom-TV" folder in the Mods folder.
 Inside Boxroom-TV, there should be 2 folders labelled "Media" and "Video Library"
 **If the "Media" folder doesn't auto-generate, create it yourself.**
 
-All videos you simply want playable should be in the "Media" folder.
+All videos you want playable and *not in a case* should be in the "Media" folder.
 
-If you wish to have a movie or show in a shelvable case, make a folder for it in the "Video Library" folder.
+**If you wish to have a movie or show in a shelvable case, make a folder for it in the "Video Library" folder.**
 
 (Example: For the movie Rango, the files should be \Boxroom-TV\VideoLibrary\Rango\Rango.mp4)
 
