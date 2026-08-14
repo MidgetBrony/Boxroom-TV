@@ -2,8 +2,6 @@
 A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM/) that enables custom MP4 playback on the in-game flatscreen and boxy CRT. Not compatible with any modded TV models.
 
 
-CREDIT FOR THIS MOD MAINLY GOES TO MIDGETBRONY ON THE DISCORD
-
 **NOTE: TV VOLUME IS CONTROLLED VIA THE TV, NOT THE GAME VOLUME.**
 
 **NOTE: I HAVE NO IDEA IF THIS IS OR WILL EVER BE COMPATIBLE WITH OTHER MODS. USE AT YOUR OWN RISK.**
