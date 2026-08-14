@@ -15,7 +15,7 @@ using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "1.3.0", "Rusty, scumgr33n, Oldie Gamer", null)]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "1.3.0", "scumgr33n", null)]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 
 namespace Boxroom_TV
