@@ -6,8 +6,6 @@ CREDIT FOR THIS MOD MAINLY GOES TO MIDGETBRONY ON THE DISCORD
 
 **NOTE: TV VOLUME IS CONTROLLED VIA THE TV, NOT THE GAME VOLUME.**
 
-Boxrooms TV
-
 <h1>INSTALLATION:</h1>
 
 Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxrooms. 
