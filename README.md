@@ -18,7 +18,7 @@ Launch the game to create your Mods folder. If one doesn't appear, create one yo
 
 Drop Boxrooms-TV.dll in your Mods folder. 
 
-**Run the game once to generate necessary files, you need 2 folders that the game will register MP4 files from.**
+**Run the game and left-click a TV to generate necessary files, you need 2 folders that the game will register MP4 files from.**
 
 Exit the game and there should be a new "Boxroom-TV" folder in the Mods folder. 
 
