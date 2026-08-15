@@ -4,7 +4,7 @@ A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM
 
 **NOTE: TV VOLUME IS CONTROLLED VIA THE TV, NOT THE GAME VOLUME.**
 
-**NOTE: I HAVE NO IDEA IF THIS IS OR WILL EVER BE COMPATIBLE WITH OTHER MODS. USE AT YOUR OWN RISK.**
+**NOTE: THIS MOD IS COMPATIBLE WITH MY OTHER MOD, [SIT TF DOWN](. ANY OTHER MODS ARE UNKNOWN TO BE COMPATIBLE.**
 
 **NOTE: TO TRANSFER YOUR SAVE ROOM TO ANOTHER USER, YOU WILL NEED TO PROVIDE THE OTHER USER WITH THE \Boxroom-TV\VideoAppIds.json FILE FROM YOUR FOLDER**
 
@@ -13,7 +13,7 @@ A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM
 
 <h1>INSTALLATION:</h1>
 
-Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxrooms. 
+Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxroom. 
 
 Launch the game to create your Mods folder. If one doesn't appear, create one yourself. 
 
