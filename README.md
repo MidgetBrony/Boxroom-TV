@@ -52,3 +52,14 @@ There is a Media folder browser button as well as the ability to control volume 
 
 The player should save its place between game launches.
 
+**HOW TO USE TV SYNC:**
+
+**On one TV, turn Sync on.** 
+
+**Pause the video.** 
+
+**On another TV, ensure nothing is playing before turning Sync on.**
+
+**On the first TV, play the video.** 
+
+**The video should now be synced across all synced TVs.**
