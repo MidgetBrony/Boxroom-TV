@@ -1,6 +1,7 @@
-﻿using HarmonyLib;
+﻿using Boxroom_TV.Videos;
+using HarmonyLib;
+using MelonLoader;
 using SteamShelf;
-using Boxroom_TV.Videos;
 
 namespace Boxroom_TV.Patches
 {
@@ -10,6 +11,8 @@ namespace Boxroom_TV.Patches
         static void Postfix()
         {
             VideoLibrarySystem.ScanAndRegister();
+            VideoLibrarySystem.RefreshOrphanCache();
+            MelonLogger.Msg("[Boxroom-TV] Configure() fired — re-scanning videos."); 
         }
     }
 }

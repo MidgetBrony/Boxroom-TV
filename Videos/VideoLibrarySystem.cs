@@ -24,6 +24,22 @@ namespace Boxroom_TV.Videos
             Path.Combine(MelonEnvironment.ModsDirectory, "Boxroom-TV", "VideoAppIds.json");
 
         private static FieldInfo registryField;
+        public static readonly HashSet<int> OrphanedVideoAppIds = new HashSet<int>();
+
+        public static void RefreshOrphanCache()
+        {
+            EnsureMapLoaded();
+            OrphanedVideoAppIds.Clear();
+
+            foreach (SteamGameData g in SteamLibrarySystem.GetKnownGames())
+            {
+                if (g.AppType != "custom") continue;
+                if (string.IsNullOrEmpty(g.Name)) continue;
+                if (!folderToAppId.TryGetValue(g.Name, out int canonicalId)) continue;
+                if (g.AppId != canonicalId)
+                    OrphanedVideoAppIds.Add(g.AppId);
+            }
+        }
 
         public static void ScanAndRegister()
         {
@@ -130,6 +146,8 @@ namespace Boxroom_TV.Videos
             }
             return registryField?.GetValue(null) as ConcurrentDictionary<int, SteamGameData>;
         }
+        public static bool IsOrphanedVideoDuplicate(SteamGameData g) => OrphanedVideoAppIds.Contains(g.AppId);
+
 
         private static void SetInternal(SteamGameData data, string propertyName, object value)
         {
