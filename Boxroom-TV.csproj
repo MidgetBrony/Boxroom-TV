@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>netstandard2.1</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -454,6 +454,7 @@
 		<Compile Include="Patches\MovieBoxFilterPatch.cs" />
 		<Compile Include="Patches\PaintArtPatch.cs" />
 		<Compile Include="Patches\SteamLibraryConfigurePatch.cs" />
+		<Compile Include="Patches\UnplacedGamesBoxAwakePatch.cs" />
 		<Compile Include="Videos\MovieBoxMarker.cs" />
 		<Compile Include="TV\TVController.cs" />
 		<Compile Include="TV\TVHelper.cs" />
