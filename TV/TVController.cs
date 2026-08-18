@@ -6,6 +6,8 @@ using System.Linq;
 using Boxroom_TV.Videos;
 using UnityEngine;
 using UnityEngine.Video;
+using UnityEngine.Rendering;
+using Unity.Collections;
 using SteamShelf;
 using SteamShelf.Input;
 
@@ -16,26 +18,36 @@ namespace Boxroom_TV.TV
         private RenderTexture renderTexture;
         private VideoPlayer player;
         private Renderer targetRenderer;
+        private Light glowLight;
+        private RenderTexture glowSampleRT;
+        private Texture2D glowSampleTex;
         private int materialIndex;
-        private string StateKey;
+        private float localVolume = 1f;
         private float autosaveTimer = 0f;
-        private List<string> videoFiles = new List<string>();
+        private float colorSampleTimer = 0f;
         private int currentIndex = 0;
         private float brightness = 1f;
+        private static readonly List<TVController> AllTVs = new List<TVController>();
+        private bool isSynced = false;
         private bool showUI = false;
+        private bool isLooping = true;
+        private bool hasVideoLoaded = false;
+        private bool showMediaBrowser = false;
         private const float MinAudioDistance = 0.5f;
         private const float MaxAudioDistance = 8f;
-        private bool hasVideoLoaded = false;
         public bool HasVideoLoaded => hasVideoLoaded;
         private static readonly KeyCode ToggleKey = KeyCode.T;
         private string urlInputText = "";
-        private bool showMediaBrowser = false;
+        private string StateKey;
+        private List<string> videoFiles = new List<string>();
         private Vector2 mediaBrowserScroll;
 
         public void Setup(Renderer renderer, int matIndex, Material overrideMaterial)
         {
             if (isSetup) return;
             isSetup = true;
+            if (!AllTVs.Contains(this))
+                AllTVs.Add(this);
             StateKey = $"{transform.position.x:F2}_{transform.position.y:F2}_{transform.position.z:F2}";
 
             if (overrideMaterial != null)
@@ -63,6 +75,8 @@ namespace Boxroom_TV.TV
                     autoGenerateMips = false
                 };
                 renderTexture.Create();
+                if (glowSampleRT == null)
+                    glowSampleRT = new RenderTexture(8, 8, 0);
             }
 
             Material[] mats = targetRenderer.materials;
@@ -73,17 +87,28 @@ namespace Boxroom_TV.TV
 
             targetRenderer.materials = mats;
 
+            GameObject glowObj = new GameObject("Boxroom-TV-Glow");
+            glowObj.transform.SetParent(transform, false);
+            glowLight = glowObj.AddComponent<Light>();
+            glowLight.type = LightType.Point;
+            glowLight.range = 3f;
+            glowLight.color = new Color(0.6f, 0.75f, 1f);
+            glowLight.intensity = 0f;
+            glowLight.shadows = LightShadows.None;
+            glowLight.renderMode = LightRenderMode.ForcePixel;
+            glowObj.transform.position = renderer.bounds.center;
+
             RefreshVideoList();
 
             audioSource = gameObject.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
             audioSource.spatialBlend = 0f;
             audioSource.panStereo = 0f;
-            audioSource.volume = Core.VolumePref.Value;
+            audioSource.volume = localVolume;
 
             player = gameObject.AddComponent<VideoPlayer>();
             player.playOnAwake = false;
-            player.isLooping = true;
+            player.isLooping = isLooping;
             player.skipOnDrop = true;
             player.source = VideoSource.Url;
             player.renderMode = VideoRenderMode.MaterialOverride;
@@ -103,6 +128,7 @@ namespace Boxroom_TV.TV
                 currentIndex = saved.CurrentIndex;
                 brightness = saved.Brightness;
                 isOn = saved.IsOn;
+                localVolume = saved.Volume;
                 hasVideoLoaded = true;
 
                 player.url = videoFiles[currentIndex];
@@ -133,6 +159,14 @@ namespace Boxroom_TV.TV
                 LoadVideo(currentIndex);
             }
         }
+        public void ToggleLoop()
+        {
+            isLooping = !isLooping;
+            if (player != null)
+                player.isLooping = isLooping;
+            SaveState();
+        }
+
         public void LoadFromUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url)) return;
@@ -174,6 +208,11 @@ namespace Boxroom_TV.TV
             player.url = videoFiles[currentIndex];
             player.Prepare();
             hasVideoLoaded = true;
+            if (glowLight != null)
+            {
+                glowLight.intensity = isOn ? brightness * 1.2f : 0f;
+            }
+            PropagateSync();
             SaveState();
         }
 
@@ -185,6 +224,7 @@ namespace Boxroom_TV.TV
             if (player == null) return;
             if (player.isPlaying) player.Pause();
             else player.Play();
+            PropagateSync();
         }
 
         public void StopVideo()
@@ -199,6 +239,7 @@ namespace Boxroom_TV.TV
             Material mat = targetRenderer.materials[materialIndex];
             mat.SetTexture("_MainTex", Texture2D.blackTexture);
             mat.SetFloat("_EmissionStrength", 0f);
+            if (glowLight != null) glowLight.intensity = 0f;
 
             SaveState();
         }
@@ -227,7 +268,8 @@ namespace Boxroom_TV.TV
                 CurrentIndex = currentIndex,
                 PlaybackTime = player != null ? player.time : 0,
                 Brightness = brightness,
-                IsOn = isOn
+                IsOn = isOn,
+                Volume = localVolume
             });
         }
 
@@ -237,10 +279,55 @@ namespace Boxroom_TV.TV
 
             Material mat = targetRenderer.materials[materialIndex];
             mat.SetFloat("_EmissionStrength", brightness);
+            glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
 
             SaveState();
         }
+        public void ToggleSync()
+        {
+            isSynced = !isSynced;
+        }
 
+        private void PropagateSync()
+        {
+            if (!isSynced) return;
+
+            foreach (TVController tv in AllTVs)
+            {
+                if (tv == this || !tv.isSynced) continue;
+                tv.ReceiveSync(videoFiles, currentIndex, player != null ? player.time : 0, player != null && player.isPlaying);
+            }
+        }
+
+        private void ReceiveSync(List<string> files, int idx, double time, bool playing)
+        {
+            if (player == null) return;
+
+            bool sameVideo = videoFiles != null && videoFiles.SequenceEqual(files) && currentIndex == idx;
+
+            if (!sameVideo)
+            {
+                videoFiles = new List<string>(files);
+                currentIndex = idx;
+                player.url = videoFiles[currentIndex];
+
+                VideoPlayer.EventHandler syncHandler = null;
+                syncHandler = vp =>
+                {
+                    vp.time = time;
+                    if (playing) vp.Play(); else vp.Pause();
+                    player.prepareCompleted -= syncHandler;
+                };
+                player.prepareCompleted += syncHandler;
+                player.Prepare();
+                hasVideoLoaded = true;
+            }
+            else
+            {
+                player.time = time;
+                if (playing) player.Play(); else player.Pause();
+            }
+        }
         public void TogglePower()
         {
             isOn = !isOn;
@@ -256,6 +343,10 @@ namespace Boxroom_TV.TV
                 }
                 mat.SetTexture("_MainTex", renderTexture);
                 mat.SetFloat("_EmissionStrength", brightness);
+                if (glowLight != null)
+                {
+                    glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
+                }
             }
             else
             {
@@ -267,6 +358,10 @@ namespace Boxroom_TV.TV
                 }
                 mat.SetTexture("_MainTex", Texture2D.blackTexture);
                 mat.SetFloat("_EmissionStrength", 0f);
+                if (glowLight != null)
+                {
+                    glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
+                }
             }
             SaveState();
         }
@@ -301,6 +396,16 @@ namespace Boxroom_TV.TV
                 }
             }
 
+            if (isOn && hasVideoLoaded && renderTexture != null)
+            {
+                colorSampleTimer += Time.deltaTime;
+                if (colorSampleTimer >= 0.08f)
+                {
+                    colorSampleTimer = 0f;
+                    SampleGlowColorSync();
+                }
+            }
+
             if (Input.GetKeyDown(ToggleKey) && (showUI || IsLookedAt()))
             {
                 if (showUI) CloseUI();
@@ -319,7 +424,48 @@ namespace Boxroom_TV.TV
             float t = Mathf.InverseLerp(MaxAudioDistance, MinAudioDistance, distance);
             float falloff = Mathf.Clamp01(t);
 
-            audioSource.volume = Core.VolumePref.Value * falloff;
+            audioSource.volume = localVolume * falloff;
+        }
+
+        private void SampleGlowColorSync()
+        {
+            if (glowSampleRT == null)
+                glowSampleRT = new RenderTexture(8, 8, 0, RenderTextureFormat.ARGB32);
+
+            Texture liveTexture = player != null ? player.texture : null;
+            if (liveTexture == null) return;
+
+            Graphics.Blit(liveTexture, glowSampleRT);
+
+            RenderTexture previous = RenderTexture.active;
+            RenderTexture.active = glowSampleRT;
+
+            if (glowSampleTex == null)
+                glowSampleTex = new Texture2D(8, 8, TextureFormat.RGB24, false);
+
+            glowSampleTex.ReadPixels(new Rect(0, 0, 8, 8), 0, 0);
+            glowSampleTex.Apply(false);
+
+            RenderTexture.active = previous;
+
+            Color32[] pixels = glowSampleTex.GetPixels32();
+            if (pixels.Length == 0 || glowLight == null) return;
+
+            float r = 0, g = 0, b = 0;
+            foreach (Color32 p in pixels)
+            {
+                r += p.r;
+                g += p.g;
+                b += p.b;
+            }
+
+            Color avg = new Color(r / pixels.Length / 255f, g / pixels.Length / 255f, b / pixels.Length / 255f);
+
+            Color.RGBToHSV(avg, out float h, out float s, out float v);
+            s = Mathf.Clamp01(s * 1.8f);
+            v = Mathf.Clamp01(v * 1.3f);
+            glowLight.color = Color.Lerp(glowLight.color, Color.HSVToRGB(h, s, v), 0.4f);
+
         }
 
         private bool IsLookedAt()
@@ -358,17 +504,36 @@ namespace Boxroom_TV.TV
             int s = Mathf.FloorToInt(seconds % 60f);
             return $"{m}:{s:00}";
         }
+
         public void ToggleUI()
         {
             if (showUI) CloseUI();
             else OpenUI();
         }
 
+        private void OnDestroy()
+        {
+            if (AllTVs.Contains(this))
+                AllTVs.Remove(this);
+
+            if (showUI)
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                Singleton<InputManager>.Instance?.SwapToInputMap(EInputMap.Player);
+            }
+            if (glowSampleRT != null)
+                glowSampleRT.Release();
+            if (glowSampleTex != null)
+                Destroy(glowSampleTex);
+        }
+
         private void OnGUI()
         {
             if (!showUI) return;
 
-            float w = 520, h = showMediaBrowser ? 530 : 370;
+            float w = 520;
+            float h = showMediaBrowser ? 610 : 475;
             float x = (Screen.width - w) / 2f;
             float y = Screen.height - h - 40f;
 
@@ -411,11 +576,13 @@ namespace Boxroom_TV.TV
                 GUI.Label(new Rect(x + 10, y + 130, 500, 20), $"{FormatTime((float)player.time)} / {FormatTime(total)}");
             }
 
-            GUI.Label(new Rect(x + 10, y + 155, 500, 20), $"Volume: {Mathf.RoundToInt(Core.VolumePref.Value * 100f)}%");
-            float newVolume = GUI.HorizontalSlider(new Rect(x + 10, y + 175, 500, 20), Core.VolumePref.Value, 0f, 1f);
-            if (!Mathf.Approximately(newVolume, Core.VolumePref.Value))
+            GUI.Label(new Rect(x + 10, y + 155, 500, 20), $"Volume: {Mathf.RoundToInt(localVolume * 100f)}%");
+            float newVolume = GUI.HorizontalSlider(new Rect(x + 10, y + 175, 500, 20), localVolume, 0f, 1f);
+            if (!Mathf.Approximately(newVolume, localVolume))
             {
-                Core.VolumePref.Value = newVolume;
+                localVolume = newVolume;
+                if (audioSource != null) audioSource.volume = localVolume;
+                SaveState();
             }
 
             if (GUI.Button(new Rect(x + 10, y + 205, 240, 30), "Dim -"))
@@ -423,18 +590,24 @@ namespace Boxroom_TV.TV
             if (GUI.Button(new Rect(x + 270, y + 205, 240, 30), "Bright +"))
                 AdjustBrightness(0.1f);
 
-            GUI.Label(new Rect(x + 10, y + 245, 500, 20), "Direct video URL (.mp4 link):");
-            urlInputText = GUI.TextField(new Rect(x + 10, y + 265, 390, 25), urlInputText);
-            if (GUI.Button(new Rect(x + 410, y + 265, 100, 25), "Load"))
+            if (GUI.Button(new Rect(x + 10, y + 240, 500, 30), isLooping ? "Loop: On" : "Loop: Off"))
+                ToggleLoop();
+
+            if (GUI.Button(new Rect(x + 10, y + 275, 500, 30), isSynced ? "Sync: On" : "Sync: Off"))
+                ToggleSync();
+
+            GUI.Label(new Rect(x + 10, y + 310, 500, 20), "Direct video URL (.mp4 link):");
+            urlInputText = GUI.TextField(new Rect(x + 10, y + 330, 390, 25), urlInputText);
+            if (GUI.Button(new Rect(x + 410, y + 330, 100, 25), "Load"))
                 LoadFromUrl(urlInputText);
 
-            if (GUI.Button(new Rect(x + 10, y + 300, 500, 30), showMediaBrowser ? "Hide Media Folder" : "Browse Media Folder"))
+            if (GUI.Button(new Rect(x + 10, y + 365, 500, 30), showMediaBrowser ? "Hide Media Folder" : "Browse Media Folder"))
                 showMediaBrowser = !showMediaBrowser;
 
             if (showMediaBrowser)
             {
                 List<string> mediaFiles = GetMediaFolderFiles();
-                Rect scrollArea = new Rect(x + 10, y + 335, 500, 130);
+                Rect scrollArea = new Rect(x + 10, y + 400, 500, 130);
                 Rect viewRect = new Rect(0, 0, 480, mediaFiles.Count * 28);
 
                 mediaBrowserScroll = GUI.BeginScrollView(scrollArea, mediaBrowserScroll, viewRect);
@@ -445,18 +618,18 @@ namespace Boxroom_TV.TV
                 }
                 GUI.EndScrollView();
 
-                if (GUI.Button(new Rect(x + 10, y + 470, 500, 30), isOn ? "Turn Off" : "Turn On"))
+                if (GUI.Button(new Rect(x + 10, y + 535, 500, 30), isOn ? "Turn Off" : "Turn On"))
                     TogglePower();
 
-                if (GUI.Button(new Rect(x + 10, y + 500, 500, 30), "Stop Video"))
+                if (GUI.Button(new Rect(x + 10, y + 570, 500, 30), "Stop Video"))
                     StopVideo();
             }
             else
             {
-                if (GUI.Button(new Rect(x + 10, y + 335, 500, 30), isOn ? "Turn Off" : "Turn On"))
+                if (GUI.Button(new Rect(x + 10, y + 400, 500, 30), isOn ? "Turn Off" : "Turn On"))
                     TogglePower();
 
-                if (GUI.Button(new Rect(x + 10, y + 370, 500, 30), "Stop Video"))
+                if (GUI.Button(new Rect(x + 10, y + 435, 500, 30), "Stop Video"))
                     StopVideo();
             }
         }
