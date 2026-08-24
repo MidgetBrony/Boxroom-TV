@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "boxroom-tv",
+  "name": "Boxroom TV",
+  "author": "scumgr33n",
+  "description": "Custom MP4 playback and movie or television cases for BOXROOM televisions.",
+  "repository": "https://github.com/scumgr33n/Boxroom-TV",
+  "requirements": { "melonLoader": "0.7.0" },
+  "dependencies": [],
+  "release": {
+    "provider": "github",
+    "asset": "Boxroom_TV.dll",
+    "destination": "Mods/Boxroom_TV.dll"
+  }
+}
