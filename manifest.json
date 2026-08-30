@@ -14,7 +14,7 @@
     },
     {
       "manifest": "https://raw.githubusercontent.com/MidgetBrony/BR-MediaAPI/refs/heads/main/manifest.json",
-      "minimumVersion": "1.0.0",
+      "minimumVersion": "1.0.1",
       "required": true
     }
   ],
