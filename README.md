@@ -1,65 +1,90 @@
-# Boxroom-TV
-A simple TV mod for [Boxroom](https://store.steampowered.com/app/4335460/BOXROOM/) that enables custom MP4 playback on the in-game flatscreen and boxy CRT. Also adds the ability to create custom cases for your movies and TV shows in MP4 format. Not compatible with any modded TV models.
+# Boxroom-TV 3
 
+Boxroom-TV turns BOXROOM's flatscreen TVs, CRTs, monitors, and Modern Tech TV into video players. Movies and TV seasons are first-class BOXROOM media powered by BR-MediaAPI: they have their own cases, shelves, inspector entry, save identity, and a Movies Box in the furniture catalogue.
 
-**NOTE: TV VOLUME IS CONTROLLED VIA THE TV, NOT THE GAME VOLUME.**
+## Requirements
 
-**NOTE: THIS MOD IS COMPATIBLE WITH MY OTHER MOD, [SIT TF DOWN](https://github.com/scumgr33n/Sit-TF-Down). ANY OTHER MODS ARE UNKNOWN TO BE COMPATIBLE.**
+- BOXROOM with MelonLoader
+- `BR_MediaAPI.dll` and its `brmediaapi_assets` bundle
+- `ModsPanel.dll`
+- `Boxroom_TV.dll`
+- `LibVLCSharp.dll`, the VLC Unity native bridge, and the LibVLC 4 Windows runtime supplied by the Boxroom-TV manifest
 
-**NOTE: TO TRANSFER YOUR SAVE ROOM TO ANOTHER USER, YOU WILL NEED TO PROVIDE THE OTHER USER WITH THE \Boxroom-TV\VideoAppIds.json FILE FROM YOUR FOLDER**
+LocalWorkshop is not required by the current release because Boxroom-TV 3 does not ship custom TV furniture. It is the intended catalogue SDK if custom TV placeables are added later.
 
-**NOT REQUIRED BUT I HIGHLY RECOMMEND USING [HANDBRAKE](https://handbrake.fr) TO CONVERT ANY FILES INTO THE EXACT MP4 THE MOD REQUIRES. INCOMPATIBLE CODECS WILL RESULT IN A TEST SCREEN.**
+## Movie library
 
+Choose **Movie Library Location** in ModsPanel. Put each movie or TV season in its own folder:
 
-<h1>INSTALLATION:</h1>
+```text
+Movies/
+  Rango/
+    Rango.mp4
+    cover.jpg
+  Smiling Friends Season 1/
+    Episode 01.mp4
+    Episode 02.mp4
+    cover.png
+```
 
-Install [MelonLoader 7.3](https://github.com/lavagang/melonloader) for Boxroom. 
+Supported file extensions are `.mp4`, `.m4v`, `.mov`, `.webm`, `.avi`, and `.mkv`. Playback is handled directly by LibVLC rather than Unity's operating-system decoder, providing broad container and codec support without conversion.
 
-Launch the game to create your Mods folder. If one doesn't appear, create one yourself. 
+Files are naturally sorted, so `Episode 2` comes before `Episode 10`. Boxroom-TV does not use a private metadata format. Optional titles and stable library identities come from Kodi-compatible `.nfo` files; filenames and folders remain the fallback.
 
-Drop Boxroom-TV.dll in your Mods folder. 
+### Kodi/XBMC-compatible TV layout
 
-**Run the game and left-click a TV to generate necessary files, you need 2 folders that the game will register MP4 files from.**
+Boxroom-TV recognizes the common Kodi structure and creates one case per season:
 
-Exit the game and there should be a new "Boxroom-TV" folder in the Mods folder. 
+```text
+TV Shows/
+  Adventure Time (2010)/
+    tvshow.nfo
+    poster.jpg
+    season01-poster.jpg
+    Season 01/
+      Adventure Time (2010) S01E01.mkv
+      Adventure Time (2010) S01E02.mkv
+    Season 02/
+      Adventure Time (2010) S02E01.mkv
+```
 
-Inside Boxroom-TV, there should be 2 folders labelled "Media" and "Video Library"
-**If the "Media" folder doesn't auto-generate, create it yourself.**
+Those cases are titled `Adventure Time: S01` and `Adventure Time: S02`. The scanner understands `Season 1`, `Season 01`, `Series 1`, and `S01` folder names. It also groups files named with Kodi's recommended `S01E01` pattern when all episodes are stored directly in the show folder. Specials use `S00`.
 
-All videos you want playable and *not in a case* should be in the "Media" folder.
+The show title and default `<uniqueid>` are read from `tvshow.nfo` when present; otherwise the show folder name and relative path are used. Season artwork follows Kodi names such as `season01-poster.jpg`, then falls back to artwork in the season folder and finally the show's `poster.jpg`.
 
-**If you wish to have a movie or show in a shelvable case, make a folder for it in the "Video Library" folder.**
+Movies support Kodi's recommended `<VideoFileName>.nfo` form and the alternative `movie.nfo`. Boxroom-TV reads `<title>` and the default `<uniqueid>` from these files. Playback ordering remains filename-based, so episode files should use `S01E01`, and multipart movies should use Kodi-style `part1`, `part2`, `cd1`, or `cd2` names.
 
-(Example: For the movie Rango, the files should be \Boxroom-TV\VideoLibrary\Rango\Rango.mp4)
+Once refreshed, place a **Movies Box** and take cases from it. Hold a movie case and use it on a supported TV. Use an empty hand on the TV—or press `T` while looking at it—to open the controller-friendly remote.
 
-Covers work the same as CDs, simply leave a cover.jpg in the same folder as the movie/show.
+Playback position, power, volume, brightness, loop state, and the current file are stored in `UserData/Boxroom-TV/TVState.json`.
 
-The player is capable of playing multiple files from a single folder.
-If you wish to have TV shows in boxes, it is highly recommended you make boxes for entire seasons, not per episode.
+The TV remote also accepts direct HTTP video links, YouTube pages, and Twitch channels, clips, or VODs. The packaged yt-dlp resolver converts supported webpage links into temporary streams; VLC receives video at up to 720p. YouTube's separate video and audio streams are attached together during playback.
 
-(Example: For Smiling Friends, you should have a box made for Smiling Friends Season 1 and place all episodes in the folder. There is buttons to switch episode.
-The files should look like \Boxroom-TV\VideoLibrary\SmilingFriends\SmilingFriends1.mp4, SmilingFriends2.mp4, etc.)
+## VLC playback
 
-The player is also capable of playing direct media links, such as those from Discord. The link should end in .mp4 . Simply paste into the URL box and press "Load". 
+Boxroom-TV 3 uses the open-source VLC for Unity native texture bridge and LibVLCSharp. The original media file is opened immediately by LibVLC; it is not transcoded, copied, or changed. MKV, WebM, HEVC, AV1, VP9, Opus and other formats supported by the packaged LibVLC build use the same playback path. Hardware decoding is selected by LibVLC when available.
 
-<h1>HOW TO USE:</h1>
+The native runtime is installed under `BOXROOM_Data/Plugins/x86_64` because Unity must discover the graphics bridge before MelonLoader initializes mods. The release manifest owns this runtime as a separately versioned dependency. Do not replace only one DLL: `VLCUnityPlugin.dll`, `LibVLCSharp.dll`, `libvlc.dll`, `libvlccore.dll`, and the `plugins` tree are a matched set.
 
-If you've imported media into the "Video Library" folder, **press V to spawn the Movie Box.** Your shelvable media will be in there.
+## Credits and licences
 
-To play a video, simply left-click a TV with the case. It should start the video automatically. Left clicking a TV playing a video with an empty hand will open the controls menu.
-You can also **press T while looking at a TV to open the controls.** 
-There is a Media folder browser button as well as the ability to control volume and scrub through videos. '
+Video playback is made possible by the contributors to [VLC and LibVLC](https://www.videolan.org/), [LibVLCSharp](https://code.videolan.org/videolan/LibVLCSharp), and [VLC for Unity](https://github.com/videolan/vlc-unity). Boxroom-TV builds the VLC for Unity bridge from its published source with the trial/watermark option disabled; no commercial Videolabs binary is redistributed.
 
-The player should save its place between game launches.
+These components are distributed under the LGPL 2.1-or-later terms described in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Online page resolution uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) under The Unlicense and its bundled third-party licences. Release archives retain all notices, licence texts, source URLs, exact source commits, and the ability to replace the dynamically loaded LGPL libraries.
 
-**HOW TO USE TV SYNC:**
+## Building
 
-**On one TV, turn Sync on.** 
+Copy `Directory.Build.user.props.example` to the ignored `Directory.Build.user.props` and set `GamePath`, set `BOXROOM_GAME_PATH`, or pass `-p:GamePath=...`.
 
-**Pause the video.** 
+```text
+dotnet restore Boxroom-TV.csproj
+dotnet build Boxroom-TV.csproj -c Release --no-restore -p:DeployToGame=false
+```
 
-**On another TV, ensure nothing is playing before turning Sync on.**
+The Windows native bridge is built from the sibling `vlc-unity` repository with Meson and LLVM/MinGW. LibVLCSharp is built from its `master` branch for `netstandard2.0` with `Unity=true`. `Directory.Build.user.props` may override `VlcUnityRepo` and `LibVLCSharpRepo` when those repositories are elsewhere.
 
-**On the first TV, play the video.** 
+Deployment is opt-in with `-p:DeployToGame=true`. It deploys the managed mods plus the matched VLC runtime and native Unity bridge. A successful build validates compilation and file deployment only; native plugin loading, rendered video, audio, controls, and save restoration still require an in-game test.
 
-**The video should now be synced across all synced TVs.**
+## Migration from Boxroom-TV 1.x
+
+The old mod registered movies as fake Steam games with negative app IDs and patched the Games Box. Version 3 removes that design entirely. Move folders from the old `Mods/Boxroom-TV/VideoLibrary` directory to the selected Movie Library Location. Old placed fake-game cases and `VideoAppIds.json` are not used by version 3; take replacement cases from the new Movies Box.

@@ -1,637 +1,468 @@
-﻿using MelonLoader;
-using MelonLoader.Utils;
+using Boxroom_TV.Videos;
+using MelonLoader;
+using ModsPanel;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Boxroom_TV.Videos;
 using UnityEngine;
-using UnityEngine.Video;
-using UnityEngine.Rendering;
-using Unity.Collections;
-using SteamShelf;
-using SteamShelf.Input;
 
-namespace Boxroom_TV.TV
+namespace Boxroom_TV.TV;
+
+public sealed class TVController : MonoBehaviour
 {
-    public class TVController : MonoBehaviour
+    private static readonly List<TVController> All = new();
+    private const float MinimumAudioDistance = 0.5f;
+    private const float MaximumAudioDistance = 8f;
+
+    private Renderer targetRenderer;
+    private int materialIndex;
+    private Material screenMaterial;
+    private Texture idleTexture;
+    private Vector2 idleTextureScale;
+    private Vector2 idleTextureOffset;
+    private VlcPlayerBackend player;
+    private Light glow;
+    private RenderTexture glowSample;
+    private Texture2D glowPixels;
+    private List<string> videos = new();
+    private int currentIndex;
+    private float volume;
+    private float brightness = 1f;
+    private bool powered = true;
+    private bool loop = true;
+    private float saveTimer;
+    private float glowTimer;
+    private string stateKey;
+    private string originalPath;
+    private int loadGeneration;
+    private bool showAdvancedRemote;
+    private bool showUrlEntry;
+    private string networkUrl = string.Empty;
+
+    public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
-        private RenderTexture renderTexture;
-        private VideoPlayer player;
-        private Renderer targetRenderer;
-        private Light glowLight;
-        private RenderTexture glowSampleRT;
-        private Texture2D glowSampleTex;
-        private int materialIndex;
-        private float localVolume = 1f;
-        private float autosaveTimer = 0f;
-        private float colorSampleTimer = 0f;
-        private int currentIndex = 0;
-        private float brightness = 1f;
-        private static readonly List<TVController> AllTVs = new List<TVController>();
-        private bool isSynced = false;
-        private bool showUI = false;
-        private bool isLooping = true;
-        private bool hasVideoLoaded = false;
-        private bool showMediaBrowser = false;
-        private const float MinAudioDistance = 0.5f;
-        private const float MaxAudioDistance = 8f;
-        public bool HasVideoLoaded => hasVideoLoaded;
-        private static readonly KeyCode ToggleKey = KeyCode.T;
-        private string urlInputText = "";
-        private string StateKey;
-        private List<string> videoFiles = new List<string>();
-        private Vector2 mediaBrowserScroll;
+        if (!TVDisplay.TryGet(painter, tag, out TVDisplay display)) return null;
+        TVController controller = painter.GetComponent<TVController>() ?? painter.gameObject.AddComponent<TVController>();
+        controller.Setup(display);
+        return controller;
+    }
 
-        public void Setup(Renderer renderer, int matIndex, Material overrideMaterial)
+    internal static void RefreshAllSettings()
+    {
+        foreach (TVController television in All.ToArray()) television.ApplyGlow();
+    }
+
+    private void Setup(TVDisplay display)
+    {
+        if (player != null) return;
+        targetRenderer = display.Renderer;
+        materialIndex = display.MaterialIndex;
+        Material[] materials = targetRenderer.materials;
+        if (display.OverrideMaterial != null) materials[materialIndex] = new Material(display.OverrideMaterial);
+        else materials[materialIndex] = new Material(materials[materialIndex]);
+        targetRenderer.materials = materials;
+        screenMaterial = targetRenderer.materials[materialIndex];
+        idleTexture = screenMaterial.mainTexture;
+        idleTextureScale = screenMaterial.mainTextureScale;
+        idleTextureOffset = screenMaterial.mainTextureOffset;
+        stateKey = TVStateStore.CreateKey(transform, tagId: GetComponent<SteamShelf.Placeables.PlacementTag>()?.PlaceableData?.ID);
+        volume = Mathf.Clamp01(Core.DefaultVolume.Value);
+
+        player = gameObject.AddComponent<VlcPlayerBackend>();
+        player.playOnAwake = false;
+        player.isLooping = loop;
+        player.errorReceived += OnPlayerError;
+        player.loopPointReached += OnPlaybackReachedEnd;
+        player.prepareCompleted += prepared => { if (powered) prepared.Play(); };
+
+        var glowObject = new GameObject("Boxroom-TV Glow");
+        glowObject.transform.SetParent(transform, false);
+        glowObject.transform.position = targetRenderer.bounds.center;
+        glow = glowObject.AddComponent<Light>();
+        glow.type = LightType.Point;
+        glow.range = 3f;
+        glow.shadows = LightShadows.None;
+
+        All.Add(this);
+        RestoreState();
+        ApplyGlow();
+    }
+
+    public void Play(MovieItem movie)
+    {
+        if (movie == null || movie.VideoPaths.Count == 0) return;
+        List<string> requested = movie.VideoPaths.Where(File.Exists).ToList();
+        if (videos.SequenceEqual(requested) && player != null && player.isPrepared)
         {
-            if (isSetup) return;
-            isSetup = true;
-            if (!AllTVs.Contains(this))
-                AllTVs.Add(this);
-            StateKey = $"{transform.position.x:F2}_{transform.position.y:F2}_{transform.position.z:F2}";
+            ShowRemote();
+            return;
+        }
+        videos = requested;
+        if (videos.Count == 0) { ModsUi.ShowToast($"No playable files found for {movie.DisplayName}."); return; }
+        currentIndex = 0;
+        powered = true;
+        LoadCurrent();
+        ModsUi.ShowToast($"Playing {movie.DisplayName}");
+    }
 
-            if (overrideMaterial != null)
+    public void ShowRemote()
+    {
+        string title = videos.Count == 0 ? "No video loaded" : DisplayTitle(videos[currentIndex]);
+        var menu = ModsUi.CreateMenu(Core.OwnerId + ".remote", "Boxroom-TV Remote", title);
+        menu.Eyebrow = "TV REMOTE";
+        float duration = Mathf.Max(1f, (float)(player?.length ?? 0));
+        float durationMinutes = duration / 60f;
+        menu.AddSlider("Timeline", () => (float)(player?.time ?? 0) / 60f,
+                minutes => SetPlaybackTime(minutes * 60f), 0f, durationMinutes, true,
+                minutes => $"{Format(minutes * 60f)} / {Format(duration)}")
+            .AddButton(player != null && player.isPlaying ? "Pause" : "Play", TogglePlayPause);
+        if (videos.Count > 1)
+            menu.AddButton("Previous episode", Previous).AddButton("Next episode", Next);
+
+        menu.AddSlider("Volume", () => volume, value => { volume = value; SaveState(); },
+                0f, 1f, false, value => $"{Mathf.RoundToInt(value * 100)}%")
+            .AddDropdown("Audio language", () => player?.AudioTrackOptions ?? new[] { "Default" },
+                () => player?.SelectedAudioTrackIndex ?? 0, index => player?.SelectAudioTrack(index))
+            .AddDropdown("Subtitles", () => player?.SubtitleTrackOptions ?? new[] { "Off" },
+                () => player?.SelectedSubtitleTrackIndex ?? 0, index => player?.SelectSubtitleTrack(index))
+            .AddButton(showUrlEntry ? "Hide online player" : "Play an online video", () => { showUrlEntry = !showUrlEntry; ShowRemote(); });
+
+        if (showUrlEntry)
+            menu.AddTextInput("Video, YouTube, or Twitch URL", () => networkUrl, value => networkUrl = value,
+                    "https://www.youtube.com/... or https://www.twitch.tv/...")
+                .AddButton("Play online video", PlayNetworkUrl, "Resolve supported pages, then open with VLC");
+
+        menu.AddButton(showAdvancedRemote ? "Hide advanced controls" : "Advanced controls",
+            () => { showAdvancedRemote = !showAdvancedRemote; ShowRemote(); });
+        if (showAdvancedRemote)
+            menu.AddHeading("Advanced")
+                .AddSlider("Screen brightness", () => brightness,
+                    value => { brightness = value; ApplyScreen(); ApplyGlow(); SaveState(); },
+                    0f, 3f, false, value => value.ToString("0.0"))
+                .AddSlider("Playback speed", () => player?.rate ?? 1f,
+                    value => { if (player != null) player.rate = value; },
+                    0.5f, 2f, false, value => value.ToString("0.00") + "x")
+                .AddToggle("Loop current video", () => loop,
+                    value => { loop = value; if (player != null) player.isLooping = value; SaveState(); })
+                .AddButton(powered ? "Power off" : "Power on", TogglePower)
+                .AddButton("Stop and clear", Stop);
+        menu.Show();
+    }
+
+    private void PlayNetworkUrl()
+    {
+        string requested = (networkUrl ?? string.Empty).Trim();
+        if (!Uri.TryCreate(requested, UriKind.Absolute, out Uri uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            ModsUi.ShowToast("Enter a valid HTTP or HTTPS video URL.");
+            return;
+        }
+        ModsUi.CloseMenu();
+        StartCoroutine(ResolveAndPlayNetworkUrl(requested, 0));
+    }
+
+    private IEnumerator ResolveAndPlayNetworkUrl(string requested, double startTime)
+    {
+        string playbackUrl = requested;
+        string audioUrl = null;
+        bool isYouTube = IsYouTubeUrl(requested);
+        bool isTwitch = IsTwitchUrl(requested);
+        if (isYouTube || isTwitch)
+        {
+            string resolverName = Application.platform == RuntimePlatform.LinuxPlayer ? "yt-dlp" : "yt-dlp.exe";
+            string resolver = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "UserData", "Boxroom-TV", "Tools", resolverName));
+            if (!File.Exists(resolver))
             {
-                Material[] currentMats = renderer.materials;
-                currentMats[matIndex] = new Material(overrideMaterial);
-                renderer.materials = currentMats;
+                ModsUi.ShowToast("The YouTube resolver is not installed.", 7f);
+                yield break;
             }
-
-            MelonLogger.Msg($"[Boxroom-TV] Renderer '{renderer.name}' has {renderer.materials.Length} material(s). Using index {matIndex}.");
-            for (int i = 0; i < renderer.materials.Length; i++)
+            string service = isTwitch ? "Twitch" : "YouTube";
+            ModsUi.ShowToast("Resolving " + service + " video...");
+            string format = isYouTube
+                ? "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio"
+                : "best[height<=720]/best";
+            var start = new System.Diagnostics.ProcessStartInfo
             {
-                MelonLogger.Msg($"[Boxroom-TV]   [{i}] {renderer.materials[i].name} (shader: {renderer.materials[i].shader.name})");
+                FileName = resolver,
+                Arguments = "--no-playlist --no-warnings --get-url -f \"" + format + "\" -- \"" + requested.Replace("\"", "\\\"") + "\"",
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            System.Diagnostics.Process process;
+            try { process = System.Diagnostics.Process.Start(start); }
+            catch (Exception exception)
+            {
+                MelonLogger.Error("[Boxroom-TV] Could not start yt-dlp: " + exception);
+                ModsUi.ShowToast("Could not start the YouTube resolver. See Latest.log.", 7f);
+                yield break;
             }
-
-            targetRenderer = renderer;
-            materialIndex = matIndex;
-
-            if (renderTexture == null)
+            float deadline = Time.realtimeSinceStartup + 45f;
+            while (!process.HasExited && Time.realtimeSinceStartup < deadline) yield return null;
+            if (!process.HasExited)
             {
-                renderTexture = new RenderTexture(1280, 720, 24)
-                {
-                    name = "Boxroom-TV-" + gameObject.GetInstanceID(),
-                    useMipMap = false,
-                    autoGenerateMips = false
-                };
-                renderTexture.Create();
-                if (glowSampleRT == null)
-                    glowSampleRT = new RenderTexture(8, 8, 0);
+                try { process.Kill(); } catch { }
+                process.Dispose();
+                ModsUi.ShowToast(service + " resolution timed out.", 7f);
+                yield break;
             }
-
-            Material[] mats = targetRenderer.materials;
-            Material screenMat = mats[materialIndex];
-
-            screenMat.SetTexture("_MainTex", renderTexture);
-            screenMat.mainTexture = renderTexture;
-
-            targetRenderer.materials = mats;
-
-            GameObject glowObj = new GameObject("Boxroom-TV-Glow");
-            glowObj.transform.SetParent(transform, false);
-            glowLight = glowObj.AddComponent<Light>();
-            glowLight.type = LightType.Point;
-            glowLight.range = 3f;
-            glowLight.color = new Color(0.6f, 0.75f, 1f);
-            glowLight.intensity = 0f;
-            glowLight.shadows = LightShadows.None;
-            glowLight.renderMode = LightRenderMode.ForcePixel;
-            glowObj.transform.position = renderer.bounds.center;
-
-            RefreshVideoList();
-
-            audioSource = gameObject.AddComponent<AudioSource>();
-            audioSource.playOnAwake = false;
-            audioSource.spatialBlend = 0f;
-            audioSource.panStereo = 0f;
-            audioSource.volume = localVolume;
-
-            player = gameObject.AddComponent<VideoPlayer>();
-            player.playOnAwake = false;
-            player.isLooping = isLooping;
-            player.skipOnDrop = true;
-            player.source = VideoSource.Url;
-            player.renderMode = VideoRenderMode.MaterialOverride;
-            player.targetMaterialRenderer = targetRenderer;
-            player.targetMaterialProperty = "_MainTex";
-
-            player.audioOutputMode = VideoAudioOutputMode.AudioSource;
-            player.SetTargetAudioSource(0, audioSource);
-
-            player.errorReceived += (vp, err) => MelonLogger.Error($"[Boxroom-TV] VideoPlayer Error: {err}");
-            player.prepareCompleted += vp => vp.Play();
-
-            TVSaveEntry saved = TVStateStore.Load(StateKey);
-            if (saved != null && saved.VideoFiles != null && saved.VideoFiles.Count > 0)
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            int exitCode = process.ExitCode;
+            process.Dispose();
+            string[] resolvedUrls = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => Uri.TryCreate(line, UriKind.Absolute, out _)).ToArray();
+            playbackUrl = resolvedUrls.FirstOrDefault();
+            audioUrl = resolvedUrls.Skip(1).FirstOrDefault();
+            bool missingAudio = isYouTube && !Uri.TryCreate(audioUrl, UriKind.Absolute, out _);
+            if (exitCode != 0 || !Uri.TryCreate(playbackUrl, UriKind.Absolute, out _) || missingAudio)
             {
-                videoFiles = saved.VideoFiles;
-                currentIndex = saved.CurrentIndex;
-                brightness = saved.Brightness;
-                isOn = saved.IsOn;
-                localVolume = saved.Volume;
-                hasVideoLoaded = true;
-
-                player.url = videoFiles[currentIndex];
-
-                VideoPlayer.EventHandler restoreHandler = null;
-                restoreHandler = vp =>
-                {
-                    vp.time = saved.PlaybackTime;
-                    if (isOn) vp.Play();
-                    player.prepareCompleted -= restoreHandler;
-                };
-                player.prepareCompleted += restoreHandler;
-                player.Prepare();
-
-                Material restoreMat = targetRenderer.materials[materialIndex];
-                if (!isOn)
-                {
-                    restoreMat.SetTexture("_MainTex", Texture2D.blackTexture);
-                    restoreMat.SetFloat("_EmissionStrength", 0f);
-                }
-                else
-                {
-                    restoreMat.SetFloat("_EmissionStrength", brightness);
-                }
-            }
-            else if (videoFiles.Count > 0)
-            {
-                LoadVideo(currentIndex);
-            }
-        }
-        public void ToggleLoop()
-        {
-            isLooping = !isLooping;
-            if (player != null)
-                player.isLooping = isLooping;
-            SaveState();
-        }
-
-        public void LoadFromUrl(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url)) return;
-
-            videoFiles = new List<string> { url.Trim() };
-            currentIndex = 0;
-            hasVideoLoaded = true;
-
-            if (player != null)
-                LoadVideo(0);
-        }
-        private List<string> GetMediaFolderFiles()
-        {
-            string mediaFolder = Path.Combine(MelonEnvironment.ModsDirectory, "Boxroom-TV", "Media");
-            Directory.CreateDirectory(mediaFolder);
-            return Directory.GetFiles(mediaFolder, "*.mp4").OrderBy(f => f).ToList();
-        }
-
-        public void LoadFromMediaFile(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path)) return;
-            videoFiles = new List<string> { path };
-            currentIndex = 0;
-            LoadVideo(0);
-            showMediaBrowser = false;
-        }
-
-        private void RefreshVideoList()
-        {
-            string mediaFolder = Path.Combine(MelonEnvironment.ModsDirectory, "Boxroom-TV", "Media");
-            Directory.CreateDirectory(mediaFolder);
-            videoFiles = Directory.GetFiles(mediaFolder, "*.mp4").OrderBy(f => f).ToList();
-        }
-
-        private void LoadVideo(int index)
-        {
-            if (videoFiles.Count == 0) return;
-            currentIndex = ((index % videoFiles.Count) + videoFiles.Count) % videoFiles.Count;
-            player.url = videoFiles[currentIndex];
-            player.Prepare();
-            hasVideoLoaded = true;
-            if (glowLight != null)
-            {
-                glowLight.intensity = isOn ? brightness * 1.2f : 0f;
-            }
-            PropagateSync();
-            SaveState();
-        }
-
-        public void NextVideo() => LoadVideo(currentIndex + 1);
-        public void PreviousVideo() => LoadVideo(currentIndex - 1);
-
-        public void TogglePlayPause()
-        {
-            if (player == null) return;
-            if (player.isPlaying) player.Pause();
-            else player.Play();
-            PropagateSync();
-        }
-
-        public void StopVideo()
-        {
-            if (player != null)
-                player.Stop();
-
-            hasVideoLoaded = false;
-            videoFiles.Clear();
-            currentIndex = 0;
-
-            Material mat = targetRenderer.materials[materialIndex];
-            mat.SetTexture("_MainTex", Texture2D.blackTexture);
-            mat.SetFloat("_EmissionStrength", 0f);
-            if (glowLight != null) glowLight.intensity = 0f;
-
-            SaveState();
-        }
-
-        public void LoadFromMediaFolder()
-        {
-            RefreshVideoList();
-            if (videoFiles.Count > 0)
-                LoadVideo(0);
-        }
-
-        private bool isOn = true;
-        private double savedTime = 0;
-        private AudioSource audioSource;
-        private bool isSetup = false;
-        public bool IsSetup => isSetup;
-        private bool isDraggingScrub = false;
-        private float scrubPreviewTime = 0f;
-        private void SaveState()
-        {
-            if (string.IsNullOrEmpty(StateKey)) return;
-
-            TVStateStore.Save(StateKey, new TVSaveEntry
-            {
-                VideoFiles = new List<string>(videoFiles),
-                CurrentIndex = currentIndex,
-                PlaybackTime = player != null ? player.time : 0,
-                Brightness = brightness,
-                IsOn = isOn,
-                Volume = localVolume
-            });
-        }
-
-        public void AdjustBrightness(float delta)
-        {
-            brightness = Mathf.Clamp(brightness + delta, 0f, 3f);
-
-            Material mat = targetRenderer.materials[materialIndex];
-            mat.SetFloat("_EmissionStrength", brightness);
-            glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
-
-            SaveState();
-        }
-        public void ToggleSync()
-        {
-            isSynced = !isSynced;
-        }
-
-        private void PropagateSync()
-        {
-            if (!isSynced) return;
-
-            foreach (TVController tv in AllTVs)
-            {
-                if (tv == this || !tv.isSynced) continue;
-                tv.ReceiveSync(videoFiles, currentIndex, player != null ? player.time : 0, player != null && player.isPlaying);
+                MelonLogger.Error("[Boxroom-TV] yt-dlp failed: " + (string.IsNullOrWhiteSpace(error) ? "No playable URL returned." : error.Trim()));
+                ModsUi.ShowToast(service + " could not be resolved. The stream may be offline or restricted.", 7f);
+                yield break;
             }
         }
+        videos = new List<string> { requested };
+        currentIndex = 0;
+        powered = true;
+        originalPath = requested;
+        int generation = ++loadGeneration;
+        player.Stop();
+        player.audioSlaveUrl = audioUrl;
+        ApplyScreen();
+        BeginPreparedPlayback(playbackUrl, startTime, generation);
+        SaveState();
+        ModsUi.ShowToast(isTwitch ? "Playing Twitch stream" : isYouTube ? "Playing YouTube video" : "Opening URL with VLC...");
+    }
 
-        private void ReceiveSync(List<string> files, int idx, double time, bool playing)
+    private static bool IsYouTubeUrl(string source)
+    {
+        if (!Uri.TryCreate(source, UriKind.Absolute, out Uri uri)) return false;
+        string host = uri.Host.ToLowerInvariant();
+        return host == "youtu.be" || host == "youtube.com" || host.EndsWith(".youtube.com");
+    }
+
+    private static bool IsTwitchUrl(string source)
+    {
+        if (!Uri.TryCreate(source, UriKind.Absolute, out Uri uri)) return false;
+        string host = uri.Host.ToLowerInvariant();
+        return host == "twitch.tv" || host.EndsWith(".twitch.tv");
+    }
+
+    private static bool NeedsWebResolver(string source) => IsYouTubeUrl(source) || IsTwitchUrl(source);
+
+    private static string DisplayTitle(string source)
+    {
+        if (Uri.TryCreate(source, UriKind.Absolute, out Uri uri) && !uri.IsFile)
+            return string.IsNullOrWhiteSpace(uri.Host) ? "Network video" : uri.Host;
+        return Path.GetFileNameWithoutExtension(source);
+    }
+
+    private void SetPlaybackTime(float seconds)
+    {
+        if (player?.isPrepared != true) return;
+        player.time = Math.Max(0, Math.Min(player.length, seconds));
+        SaveState();
+    }
+
+    private void CycleAudioTrack()
+    {
+        player?.CycleAudioTrack();
+        ShowRemote();
+    }
+
+    private void CycleSubtitleTrack()
+    {
+        player?.CycleSubtitleTrack();
+        ShowRemote();
+    }
+
+    private void LoadCurrent(double startTime = 0)
+    {
+        if (player == null || videos.Count == 0) return;
+        currentIndex = ((currentIndex % videos.Count) + videos.Count) % videos.Count;
+        originalPath = videos[currentIndex];
+        int generation = ++loadGeneration;
+        player.Stop();
+        ApplyScreen();
+        BeginPreparedPlayback(originalPath, startTime, generation);
+        SaveState();
+    }
+
+    private void BeginPreparedPlayback(string path, double startTime, int generation)
+    {
+        if (generation != loadGeneration || string.IsNullOrWhiteSpace(path)) return;
+        player.url = path;
+        Action<VlcPlayerBackend> seek = null;
+        seek = prepared => { prepared.prepareCompleted -= seek; if (startTime > 0 && startTime < prepared.length) prepared.time = startTime; };
+        player.prepareCompleted += seek;
+        player.Prepare();
+        ApplyScreen();
+    }
+
+    private void OnPlayerError(VlcPlayerBackend _, string error)
+    {
+        MelonLogger.Error("[Boxroom-TV] " + error);
+        ModsUi.ShowToast(error + " See MelonLoader/Latest.log.", 7f);
+    }
+
+    private void OnPlaybackReachedEnd(VlcPlayerBackend _)
+    {
+        if (!loop && videos.Count > 1) Next();
+    }
+
+    private void TogglePlayPause()
+    {
+        if (player == null || videos.Count == 0) return;
+        if (!powered) TogglePower();
+        else if (player.isPlaying) player.Pause(); else player.Play();
+        SaveState();
+    }
+
+    private void Previous() { if (videos.Count > 0) { currentIndex--; LoadCurrent(); } }
+    private void Next() { if (videos.Count > 0) { currentIndex++; LoadCurrent(); } }
+    private void Seek(double seconds) { if (player?.isPrepared == true) player.time = Math.Max(0, Math.Min(player.length, player.time + seconds)); SaveState(); }
+    private void ChangeVolume(float delta) { volume = Mathf.Clamp01(volume + delta); SaveState(); ShowRemote(); }
+    private void ChangeBrightness(float delta) { brightness = Mathf.Clamp(brightness + delta, 0f, 3f); ApplyScreen(); ApplyGlow(); SaveState(); ShowRemote(); }
+
+    private void TogglePower()
+    {
+        powered = !powered;
+        if (powered) { player.enabled = true; if (videos.Count > 0) player.Play(); }
+        else { player.Pause(); player.enabled = false; }
+        ApplyScreen();
+        ApplyGlow();
+        SaveState();
+        ShowRemote();
+    }
+
+    private void Stop()
+    {
+        loadGeneration++;
+        player?.Stop();
+        videos.Clear();
+        originalPath = null;
+        currentIndex = 0;
+        ApplyScreen();
+        ApplyGlow();
+        SaveState();
+        ModsUi.CloseMenu();
+    }
+
+    private void Update()
+    {
+        if (player != null)
         {
-            if (player == null) return;
+            Camera camera = Camera.main;
+            float falloff = camera == null ? 0f : Mathf.Clamp01(Mathf.InverseLerp(MaximumAudioDistance, MinimumAudioDistance, Vector3.Distance(camera.transform.position, transform.position)));
+            player.volume = volume * falloff;
 
-            bool sameVideo = videoFiles != null && videoFiles.SequenceEqual(files) && currentIndex == idx;
-
-            if (!sameVideo)
-            {
-                videoFiles = new List<string>(files);
-                currentIndex = idx;
-                player.url = videoFiles[currentIndex];
-
-                VideoPlayer.EventHandler syncHandler = null;
-                syncHandler = vp =>
-                {
-                    vp.time = time;
-                    if (playing) vp.Play(); else vp.Pause();
-                    player.prepareCompleted -= syncHandler;
-                };
-                player.prepareCompleted += syncHandler;
-                player.Prepare();
-                hasVideoLoaded = true;
-            }
-            else
-            {
-                player.time = time;
-                if (playing) player.Play(); else player.Pause();
-            }
-        }
-        public void TogglePower()
-        {
-            isOn = !isOn;
-            Material mat = targetRenderer.materials[materialIndex];
-
-            if (isOn)
-            {
-                if (player != null)
-                {
-                    player.enabled = true;
-                    player.time = savedTime;
-                    player.Play();
-                }
-                mat.SetTexture("_MainTex", renderTexture);
-                mat.SetFloat("_EmissionStrength", brightness);
-                if (glowLight != null)
-                {
-                    glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
-                }
-            }
-            else
-            {
-                if (player != null)
-                {
-                    savedTime = player.time;
-                    player.Pause();
-                    player.enabled = false;
-                }
-                mat.SetTexture("_MainTex", Texture2D.blackTexture);
-                mat.SetFloat("_EmissionStrength", 0f);
-                if (glowLight != null)
-                {
-                    glowLight.intensity = isOn ? Mathf.Max(brightness * 1.2f, 0.3f) : 0f;
-                }
-            }
-            SaveState();
-        }
-
-        private void OpenUI()
-        {
-            showUI = true;
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-            Singleton<InputManager>.Instance.SwapToInputMap(EInputMap.UI);
-        }
-
-        private void CloseUI()
-        {
-            showUI = false;
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-            Singleton<InputManager>.Instance.SwapToInputMap(EInputMap.Player);
-        }
-
-        private void Update()
-        {
-            UpdateSpatialVolume();
-
-            if (hasVideoLoaded)
-            {
-                autosaveTimer += Time.deltaTime;
-                if (autosaveTimer >= 5f)
-                {
-                    autosaveTimer = 0f;
-                    SaveState();
-                }
-            }
-
-            if (isOn && hasVideoLoaded && renderTexture != null)
-            {
-                colorSampleTimer += Time.deltaTime;
-                if (colorSampleTimer >= 0.08f)
-                {
-                    colorSampleTimer = 0f;
-                    SampleGlowColorSync();
-                }
-            }
-
-            if (Input.GetKeyDown(ToggleKey) && (showUI || IsLookedAt()))
-            {
-                if (showUI) CloseUI();
-                else OpenUI();
-            }
-        }
-
-        private void UpdateSpatialVolume()
-        {
-            if (audioSource == null) return;
-
-            Camera cam = Camera.main;
-            if (cam == null) return;
-
-            float distance = Vector3.Distance(cam.transform.position, transform.position);
-            float t = Mathf.InverseLerp(MaxAudioDistance, MinAudioDistance, distance);
-            float falloff = Mathf.Clamp01(t);
-
-            audioSource.volume = localVolume * falloff;
-        }
-
-        private void SampleGlowColorSync()
-        {
-            if (glowSampleRT == null)
-                glowSampleRT = new RenderTexture(8, 8, 0, RenderTextureFormat.ARGB32);
-
-            Texture liveTexture = player != null ? player.texture : null;
-            if (liveTexture == null) return;
-
-            Graphics.Blit(liveTexture, glowSampleRT);
-
-            RenderTexture previous = RenderTexture.active;
-            RenderTexture.active = glowSampleRT;
-
-            if (glowSampleTex == null)
-                glowSampleTex = new Texture2D(8, 8, TextureFormat.RGB24, false);
-
-            glowSampleTex.ReadPixels(new Rect(0, 0, 8, 8), 0, 0);
-            glowSampleTex.Apply(false);
-
-            RenderTexture.active = previous;
-
-            Color32[] pixels = glowSampleTex.GetPixels32();
-            if (pixels.Length == 0 || glowLight == null) return;
-
-            float r = 0, g = 0, b = 0;
-            foreach (Color32 p in pixels)
-            {
-                r += p.r;
-                g += p.g;
-                b += p.b;
-            }
-
-            Color avg = new Color(r / pixels.Length / 255f, g / pixels.Length / 255f, b / pixels.Length / 255f);
-
-            Color.RGBToHSV(avg, out float h, out float s, out float v);
-            s = Mathf.Clamp01(s * 1.8f);
-            v = Mathf.Clamp01(v * 1.3f);
-            glowLight.color = Color.Lerp(glowLight.color, Color.HSVToRGB(h, s, v), 0.4f);
-
+            // VLC creates its external Unity texture after playback has started.
+            // Attach it as soon as the first frame becomes available instead of
+            // leaving the material on the temporary idle texture.
+            if (powered && videos.Count > 0 && player.texture != null && screenMaterial?.mainTexture != player.texture)
+                ApplyScreen();
         }
 
-        private bool IsLookedAt()
+        saveTimer += Time.deltaTime;
+        if (videos.Count > 0 && saveTimer >= 5f) { saveTimer = 0; SaveState(); }
+        if (!Core.AmbientGlow.Value || !powered || player?.texture == null) return;
+        glowTimer += Time.deltaTime;
+        if (glowTimer >= 0.12f) { glowTimer = 0; SampleGlow(); }
+    }
+
+    private void ApplyScreen()
+    {
+        if (screenMaterial == null) return;
+        if (!powered || videos.Count == 0)
         {
-            Camera cam = Camera.main;
-            if (cam == null) return false;
-
-            if (Physics.Raycast(cam.transform.position, cam.transform.forward, out RaycastHit hit, 4f))
-            {
-                return hit.collider.gameObject == gameObject || hit.collider.transform.IsChildOf(transform);
-            }
-            return false;
+            screenMaterial.mainTexture = Texture2D.blackTexture;
+            RestoreIdleTextureMapping();
         }
-
-        public void PlayHeldCase(List<string> paths)
+        else if (player?.texture != null)
         {
-            if (paths == null || paths.Count == 0) return;
-
-            bool sameCase = videoFiles != null && videoFiles.SequenceEqual(paths);
-            if (sameCase && player != null && player.isPrepared)
-            {
-                if (showUI) CloseUI();
-                else OpenUI();
-                return;
-            }
-
-            videoFiles = new List<string>(paths);
-            currentIndex = 0;
-
-            if (player != null)
-                LoadVideo(0);
+            screenMaterial.mainTexture = player.texture;
+            RestoreIdleTextureMapping();
         }
-        private static string FormatTime(float seconds)
+        else
         {
-            int m = Mathf.FloorToInt(seconds / 60f);
-            int s = Mathf.FloorToInt(seconds % 60f);
-            return $"{m}:{s:00}";
+            screenMaterial.mainTexture = idleTexture;
+            RestoreIdleTextureMapping();
         }
+        if (screenMaterial.HasProperty("_EmissionStrength")) screenMaterial.SetFloat("_EmissionStrength", powered ? brightness : 0f);
+    }
 
-        public void ToggleUI()
+    private void RestoreIdleTextureMapping()
+    {
+        screenMaterial.mainTextureScale = idleTextureScale;
+        screenMaterial.mainTextureOffset = idleTextureOffset;
+    }
+
+    private void ApplyGlow()
+    {
+        if (glow != null) glow.intensity = Core.AmbientGlow.Value && powered && videos.Count > 0 ? Mathf.Max(0.3f, brightness * 1.2f) : 0f;
+    }
+
+    private void SampleGlow()
+    {
+        glowSample ??= new RenderTexture(4, 4, 0, RenderTextureFormat.ARGB32);
+        glowPixels ??= new Texture2D(4, 4, TextureFormat.RGB24, false);
+        Graphics.Blit(player.texture, glowSample);
+        RenderTexture previous = RenderTexture.active;
+        RenderTexture.active = glowSample;
+        glowPixels.ReadPixels(new Rect(0, 0, 4, 4), 0, 0);
+        glowPixels.Apply(false);
+        RenderTexture.active = previous;
+        Color[] pixels = glowPixels.GetPixels();
+        if (pixels.Length == 0) return;
+        Color average = pixels.Aggregate(Color.black, (sum, pixel) => sum + pixel) / pixels.Length;
+        glow.color = Color.Lerp(glow.color, average.maxColorComponent < 0.05f ? Color.white : average, 0.4f);
+    }
+
+    private string FormatTime() => player?.isPrepared == true ? $"{Format(player.time)} / {Format(player.length)}" : "Not ready";
+    private static string Format(double seconds) => $"{Math.Floor(seconds / 60):0}:{Math.Floor(seconds % 60):00}";
+
+    private void RestoreState()
+    {
+        if (!Core.ResumePlayback.Value) return;
+        TVSaveEntry saved = TVStateStore.Load(stateKey);
+        if (saved?.VideoFiles == null || saved.VideoFiles.Count == 0) return;
+        videos = saved.VideoFiles.Where(IsPlayableSource).ToList();
+        if (videos.Count == 0) return;
+        currentIndex = Mathf.Clamp(saved.CurrentIndex, 0, videos.Count - 1);
+        brightness = Mathf.Clamp(saved.Brightness, 0f, 3f);
+        volume = Mathf.Clamp01(saved.Volume);
+        powered = saved.IsOn;
+        loop = saved.IsLooping;
+        player.isLooping = loop;
+        if (NeedsWebResolver(videos[currentIndex])) StartCoroutine(ResolveAndPlayNetworkUrl(videos[currentIndex], saved.PlaybackTime));
+        else LoadCurrent(saved.PlaybackTime);
+        if (!powered) player.prepareCompleted += prepared => prepared.Pause();
+    }
+
+    private static bool IsPlayableSource(string source) => File.Exists(source) ||
+        (Uri.TryCreate(source, UriKind.Absolute, out Uri uri) &&
+         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
+
+    private void SaveState()
+    {
+        if (string.IsNullOrWhiteSpace(stateKey)) return;
+        TVStateStore.Save(stateKey, new TVSaveEntry
         {
-            if (showUI) CloseUI();
-            else OpenUI();
-        }
+            VideoFiles = new List<string>(videos), CurrentIndex = currentIndex,
+            PlaybackTime = player?.isPrepared == true ? player.time : 0,
+            Brightness = brightness, Volume = volume, IsOn = powered, IsLooping = loop
+        });
+    }
 
-        private void OnDestroy()
-        {
-            if (AllTVs.Contains(this))
-                AllTVs.Remove(this);
-
-            if (showUI)
-            {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
-                Singleton<InputManager>.Instance?.SwapToInputMap(EInputMap.Player);
-            }
-            if (glowSampleRT != null)
-                glowSampleRT.Release();
-            if (glowSampleTex != null)
-                Destroy(glowSampleTex);
-        }
-
-        private void OnGUI()
-        {
-            if (!showUI) return;
-
-            float w = 520;
-            float h = showMediaBrowser ? 610 : 475;
-            float x = (Screen.width - w) / 2f;
-            float y = Screen.height - h - 40f;
-
-            GUI.Box(new Rect(x, y, w, h), "Boxroom-TV Remote");
-
-            if (GUI.Button(new Rect(x + 10, y + 30, 240, 30), player != null && player.isPlaying ? "Pause" : "Play"))
-                TogglePlayPause();
-
-            if (GUI.Button(new Rect(x + 270, y + 30, 240, 30), "Close"))
-                CloseUI();
-
-            if (GUI.Button(new Rect(x + 10, y + 70, 50, 30), "<<"))
-                PreviousVideo();
-            GUI.Label(new Rect(x + 70, y + 75, 380, 20), videoFiles.Count > 0 ? Path.GetFileName(videoFiles[currentIndex]) : "No videos found");
-            if (GUI.Button(new Rect(x + 460, y + 70, 50, 30), ">>"))
-                NextVideo();
-
-            if (player != null && player.length > 0)
-            {
-                float total = (float)player.length;
-                Rect sliderRect = new Rect(x + 10, y + 115, 500, 20);
-
-                Vector2 mouseGuiPos = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-
-                if (Input.GetMouseButtonDown(0) && sliderRect.Contains(mouseGuiPos))
-                    isDraggingScrub = true;
-
-                if (isDraggingScrub && !Input.GetMouseButton(0))
-                    isDraggingScrub = false;
-
-                float sliderValue = isDraggingScrub ? scrubPreviewTime : (float)player.time;
-                float newTime = GUI.HorizontalSlider(sliderRect, sliderValue, 0f, total);
-
-                if (isDraggingScrub)
-                {
-                    scrubPreviewTime = newTime;
-                    player.time = newTime;
-                }
-
-                GUI.Label(new Rect(x + 10, y + 130, 500, 20), $"{FormatTime((float)player.time)} / {FormatTime(total)}");
-            }
-
-            GUI.Label(new Rect(x + 10, y + 155, 500, 20), $"Volume: {Mathf.RoundToInt(localVolume * 100f)}%");
-            float newVolume = GUI.HorizontalSlider(new Rect(x + 10, y + 175, 500, 20), localVolume, 0f, 1f);
-            if (!Mathf.Approximately(newVolume, localVolume))
-            {
-                localVolume = newVolume;
-                if (audioSource != null) audioSource.volume = localVolume;
-                SaveState();
-            }
-
-            if (GUI.Button(new Rect(x + 10, y + 205, 240, 30), "Dim -"))
-                AdjustBrightness(-0.1f);
-            if (GUI.Button(new Rect(x + 270, y + 205, 240, 30), "Bright +"))
-                AdjustBrightness(0.1f);
-
-            if (GUI.Button(new Rect(x + 10, y + 240, 500, 30), isLooping ? "Loop: On" : "Loop: Off"))
-                ToggleLoop();
-
-            if (GUI.Button(new Rect(x + 10, y + 275, 500, 30), isSynced ? "Sync: On" : "Sync: Off"))
-                ToggleSync();
-
-            GUI.Label(new Rect(x + 10, y + 310, 500, 20), "Direct video URL (.mp4 link):");
-            urlInputText = GUI.TextField(new Rect(x + 10, y + 330, 390, 25), urlInputText);
-            if (GUI.Button(new Rect(x + 410, y + 330, 100, 25), "Load"))
-                LoadFromUrl(urlInputText);
-
-            if (GUI.Button(new Rect(x + 10, y + 365, 500, 30), showMediaBrowser ? "Hide Media Folder" : "Browse Media Folder"))
-                showMediaBrowser = !showMediaBrowser;
-
-            if (showMediaBrowser)
-            {
-                List<string> mediaFiles = GetMediaFolderFiles();
-                Rect scrollArea = new Rect(x + 10, y + 400, 500, 130);
-                Rect viewRect = new Rect(0, 0, 480, mediaFiles.Count * 28);
-
-                mediaBrowserScroll = GUI.BeginScrollView(scrollArea, mediaBrowserScroll, viewRect);
-                for (int i = 0; i < mediaFiles.Count; i++)
-                {
-                    if (GUI.Button(new Rect(0, i * 28, 480, 25), Path.GetFileName(mediaFiles[i])))
-                        LoadFromMediaFile(mediaFiles[i]);
-                }
-                GUI.EndScrollView();
-
-                if (GUI.Button(new Rect(x + 10, y + 535, 500, 30), isOn ? "Turn Off" : "Turn On"))
-                    TogglePower();
-
-                if (GUI.Button(new Rect(x + 10, y + 570, 500, 30), "Stop Video"))
-                    StopVideo();
-            }
-            else
-            {
-                if (GUI.Button(new Rect(x + 10, y + 400, 500, 30), isOn ? "Turn Off" : "Turn On"))
-                    TogglePower();
-
-                if (GUI.Button(new Rect(x + 10, y + 435, 500, 30), "Stop Video"))
-                    StopVideo();
-            }
-        }
+    private void OnDestroy()
+    {
+        SaveState();
+        All.Remove(this);
+        if (glowSample != null) { glowSample.Release(); Destroy(glowSample); }
+        if (glowPixels != null) Destroy(glowPixels);
+        if (screenMaterial != null) Destroy(screenMaterial);
     }
 }

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "boxroom-tv",
+  "name": "Boxroom-TV",
+  "author": "MidgetBrony",
+  "description": "VLC-powered movies, television seasons, YouTube, Twitch, and controller-friendly playback on BOXROOM televisions.",
+  "repository": "https://github.com/MidgetBrony/Boxroom-TV",
+  "requirements": { "melonLoader": "0.7.0" },
+  "dependencies": [
+    {
+      "manifest": "https://raw.githubusercontent.com/MidgetBrony/ModsPanel/refs/heads/master/manifest.json",
+      "minimumVersion": "2.5.0",
+      "required": true
+    },
+    {
+      "manifest": "https://raw.githubusercontent.com/MidgetBrony/BR-MediaAPI/refs/heads/main/manifest.json",
+      "minimumVersion": "1.0.0",
+      "required": true
+    }
+  ],
+  "release": {
+    "provider": "github",
+    "asset": "Boxroom-TV-*.zip",
+    "checksumAsset": "SHA256SUMS.txt"
+  }
+}

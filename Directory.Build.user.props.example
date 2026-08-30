@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <GamePath>D:\SteamLibrary\steamapps\common\My Game Room</GamePath>
+    <VlcUnityRepo>C:\Users\Rusty\source\repos\vlc-unity</VlcUnityRepo>
+    <LibVLCSharpRepo>C:\Users\Rusty\source\repos\LibVLCSharp</LibVLCSharpRepo>
+  </PropertyGroup>
+</Project>
