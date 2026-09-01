@@ -40,6 +40,7 @@ public sealed class TVController : MonoBehaviour
     private bool showAdvancedRemote;
     private bool showUrlEntry;
     private string networkUrl = string.Empty;
+    private ModMenu remoteMenu;
 
     public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
@@ -111,15 +112,15 @@ public sealed class TVController : MonoBehaviour
     {
         string title = videos.Count == 0 ? "No video loaded" : DisplayTitle(videos[currentIndex]);
         var menu = ModsUi.CreateMenu(Core.OwnerId + ".remote", "Boxroom-TV Remote", title);
+        remoteMenu = menu;
         menu.Eyebrow = "TV REMOTE";
         float duration = Mathf.Max(1f, (float)(player?.length ?? 0));
-        float durationMinutes = duration / 60f;
-        menu.AddSlider("Timeline", () => (float)(player?.time ?? 0) / 60f,
-                minutes => SetPlaybackTime(minutes * 60f), 0f, durationMinutes, true,
-                minutes => $"{Format(minutes * 60f)} / {Format(duration)}")
+        menu.AddSlider("Timeline", () => (float)(player?.time ?? 0),
+                SetPlaybackTime, 0f, duration, true,
+                seconds => $"{Format(seconds)} / {Format(duration)}")
             .AddButton(player != null && player.isPlaying ? "Pause" : "Play", TogglePlayPause);
         if (videos.Count > 1)
-            menu.AddButton("Previous episode", Previous).AddButton("Next episode", Next);
+            menu.AddButton("Previous episode", PreviousFromRemote).AddButton("Next episode", NextFromRemote);
 
         menu.AddSlider("Volume", () => volume, value => { volume = value; SaveState(); },
                 0f, 1f, false, value => $"{Mathf.RoundToInt(value * 100)}%")
@@ -229,7 +230,6 @@ public sealed class TVController : MonoBehaviour
         powered = true;
         originalPath = requested;
         int generation = ++loadGeneration;
-        player.Stop();
         player.audioSlaveUrl = audioUrl;
         ApplyScreen();
         BeginPreparedPlayback(playbackUrl, startTime, generation);
@@ -285,7 +285,6 @@ public sealed class TVController : MonoBehaviour
         currentIndex = ((currentIndex % videos.Count) + videos.Count) % videos.Count;
         originalPath = videos[currentIndex];
         int generation = ++loadGeneration;
-        player.Stop();
         ApplyScreen();
         BeginPreparedPlayback(originalPath, startTime, generation);
         SaveState();
@@ -296,7 +295,12 @@ public sealed class TVController : MonoBehaviour
         if (generation != loadGeneration || string.IsNullOrWhiteSpace(path)) return;
         player.url = path;
         Action<VlcPlayerBackend> seek = null;
-        seek = prepared => { prepared.prepareCompleted -= seek; if (startTime > 0 && startTime < prepared.length) prepared.time = startTime; };
+        seek = prepared =>
+        {
+            prepared.prepareCompleted -= seek;
+            if (startTime > 0 && startTime < prepared.length) prepared.time = startTime;
+            if (remoteMenu?.IsOpen == true) ShowRemote();
+        };
         player.prepareCompleted += seek;
         player.Prepare();
         ApplyScreen();
@@ -323,6 +327,8 @@ public sealed class TVController : MonoBehaviour
 
     private void Previous() { if (videos.Count > 0) { currentIndex--; LoadCurrent(); } }
     private void Next() { if (videos.Count > 0) { currentIndex++; LoadCurrent(); } }
+    private void PreviousFromRemote() { Previous(); ShowRemote(); }
+    private void NextFromRemote() { Next(); ShowRemote(); }
     private void Seek(double seconds) { if (player?.isPrepared == true) player.time = Math.Max(0, Math.Min(player.length, player.time + seconds)); SaveState(); }
     private void ChangeVolume(float delta) { volume = Mathf.Clamp01(volume + delta); SaveState(); ShowRemote(); }
     private void ChangeBrightness(float delta) { brightness = Mathf.Clamp(brightness + delta, 0f, 3f); ApplyScreen(); ApplyGlow(); SaveState(); ShowRemote(); }

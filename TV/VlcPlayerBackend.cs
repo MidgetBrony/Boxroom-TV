@@ -20,8 +20,8 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     private Media media;
     private Texture2D videoTexture;
     private RenderTexture outputTexture;
-    private bool stoppingIntentionally;
     private bool errorReported;
+    private bool endHandled;
 
     internal event Action<VlcPlayerBackend> prepareCompleted;
     internal event Action<VlcPlayerBackend, string> errorReceived;
@@ -36,10 +36,10 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     internal Texture texture => outputTexture;
     internal double time
     {
-        get => Math.Max(0, (mediaPlayer?.Time ?? 0) / 1000d);
-        set { mediaPlayer?.SetTime((long)(Math.Max(0, value) * 1000), true); }
+        get => Math.Max(0, (mediaPlayer?.Time ?? 0) / 1_000_000d);
+        set { mediaPlayer?.SetTime((long)(Math.Max(0, value) * 1_000_000), true); }
     }
-    internal double length => Math.Max(0, (mediaPlayer?.Length ?? 0) / 1000d);
+    internal double length => Math.Max(0, (mediaPlayer?.Length ?? 0) / 1_000_000d);
     internal float rate
     {
         get => mediaPlayer?.Rate ?? 1f;
@@ -62,7 +62,6 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
             mediaPlayer = new MediaPlayer(libVlc);
             mediaPlayer.Playing += (_, _) => mainThread.Enqueue(OnPlaying);
             mediaPlayer.EncounteredError += (_, _) => mainThread.Enqueue(() => OnError("VLC could not decode or play this media."));
-            mediaPlayer.Stopping += (_, _) => mainThread.Enqueue(OnStopping);
         }
         catch (Exception exception)
         {
@@ -100,7 +99,7 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
         Stop();
         audioSlaveUrl = requestedAudioSlave;
         isPrepared = false;
-        stoppingIntentionally = false;
+        endHandled = false;
         errorReported = false;
         bool networkSource = Uri.TryCreate(url, UriKind.Absolute, out Uri sourceUri) &&
             (sourceUri.Scheme == Uri.UriSchemeHttp || sourceUri.Scheme == Uri.UriSchemeHttps);
@@ -135,7 +134,7 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
 
     internal void Stop()
     {
-        stoppingIntentionally = true;
+        endHandled = true;
         try { mediaPlayer?.Stop(); } catch { }
         Media current = mediaPlayer?.Media;
         current?.Dispose();
@@ -149,6 +148,12 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     private void Update()
     {
         while (mainThread.TryDequeue(out Action action)) action();
+        if (mediaPlayer != null && isPrepared && !endHandled &&
+            (mediaPlayer.State == VLCState.Stopping || mediaPlayer.State == VLCState.Stopped))
+        {
+            OnPlaybackEnded();
+            return;
+        }
         if (mediaPlayer == null || !isPrepared) return;
 
         uint width = 0, height = 0;
@@ -177,6 +182,7 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
 
     private void OnPlaying()
     {
+        endHandled = false;
         if (!isPrepared)
         {
             isPrepared = true;
@@ -184,9 +190,10 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
         }
     }
 
-    private void OnStopping()
+    private void OnPlaybackEnded()
     {
-        if (stoppingIntentionally) { stoppingIntentionally = false; return; }
+        if (endHandled) return;
+        endHandled = true;
         if (isLooping && mediaPlayer != null)
         {
             mediaPlayer.SetTime(0, true);
@@ -201,8 +208,7 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
         if (errorReported) return;
         errorReported = true;
         isPrepared = false;
-        stoppingIntentionally = true;
-        try { mediaPlayer?.Stop(); } catch { }
+        Stop();
         errorReceived?.Invoke(this, message);
     }
 

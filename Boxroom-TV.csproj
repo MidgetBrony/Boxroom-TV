@@ -6,8 +6,8 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>Boxroom_TV</RootNamespace>
     <AssemblyName>Boxroom_TV</AssemblyName>
-    <AssemblyVersion>3.3.0.0</AssemblyVersion>
-    <FileVersion>3.3.0.0</FileVersion>
+    <AssemblyVersion>3.3.1.0</AssemblyVersion>
+    <FileVersion>3.3.1.0</FileVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>

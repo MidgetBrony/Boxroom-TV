@@ -9,7 +9,7 @@
   "dependencies": [
     {
       "manifest": "https://raw.githubusercontent.com/MidgetBrony/ModsPanel/refs/heads/master/manifest.json",
-      "minimumVersion": "2.5.0",
+      "minimumVersion": "2.5.1",
       "required": true
     },
     {
