@@ -20,6 +20,8 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     private Media media;
     private Texture2D videoTexture;
     private RenderTexture outputTexture;
+    private FmodVlcAudio fmodAudio;
+    private float requestedVolume;
     private bool errorReported;
     private bool endHandled;
 
@@ -47,8 +49,14 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     }
     internal float volume
     {
-        get => (mediaPlayer?.Volume ?? 0) / 100f;
-        set { mediaPlayer?.SetVolume(Mathf.RoundToInt(Mathf.Clamp01(value) * 100)); }
+        get => requestedVolume;
+        set { requestedVolume = Mathf.Clamp01(value); fmodAudio?.SetVolume(requestedVolume); }
+    }
+
+    internal void SetSpatialAudio(Vector3 position, float requestedLevel, float maximumDistance)
+    {
+        requestedVolume = Mathf.Clamp01(requestedLevel);
+        fmodAudio?.Update(position, requestedVolume, maximumDistance);
     }
 
     [DllImport(UnityPlugin, CallingConvention = CallingConvention.Cdecl, EntryPoint = "libvlc_unity_set_color_space")]
@@ -56,10 +64,16 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
 
     private void Awake()
     {
+        InitializeMediaPlayer();
+    }
+
+    private void InitializeMediaPlayer()
+    {
         try
         {
             EnsureInitialized();
             mediaPlayer = new MediaPlayer(libVlc);
+            fmodAudio = new FmodVlcAudio(mediaPlayer);
             mediaPlayer.Playing += (_, _) => mainThread.Enqueue(OnPlaying);
             mediaPlayer.EncounteredError += (_, _) => mainThread.Enqueue(() => OnError("VLC could not decode or play this media."));
         }
@@ -68,6 +82,21 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
             MelonLogger.Error("[Boxroom-TV] VLC initialization failed: " + exception);
             mainThread.Enqueue(() => OnError("VLC failed to initialize. See MelonLoader/Latest.log."));
         }
+    }
+
+    internal void ResetDecoder()
+    {
+        Stop();
+        fmodAudio?.Dispose();
+        fmodAudio = null;
+        MediaPlayer previous = mediaPlayer;
+        mediaPlayer = null;
+        try { previous?.Dispose(); } catch { }
+        while (mainThread.TryDequeue(out _)) { }
+        DestroyVideoTextures();
+        errorReported = false;
+        endHandled = false;
+        InitializeMediaPlayer();
     }
 
     private static void EnsureInitialized()
@@ -301,6 +330,8 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     private void OnDestroy()
     {
         Stop();
+        fmodAudio?.Dispose();
+        fmodAudio = null;
         mediaPlayer?.Dispose();
         mediaPlayer = null;
         DestroyVideoTextures();

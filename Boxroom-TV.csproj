@@ -4,10 +4,11 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Boxroom_TV</RootNamespace>
     <AssemblyName>Boxroom_TV</AssemblyName>
-    <AssemblyVersion>3.3.1.0</AssemblyVersion>
-    <FileVersion>3.3.1.0</FileVersion>
+    <AssemblyVersion>3.4.4.0</AssemblyVersion>
+    <FileVersion>3.4.4.0</FileVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>
@@ -17,6 +18,7 @@
     <ProjectReference Include="..\BR-MediaAPI\BR-MediaAPI.csproj" />
     <Reference Include="ModsPanel"><HintPath>..\ModsPanel\bin\Release\netstandard2.1\ModsPanel.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="LibVLCSharp"><HintPath>$(LibVLCSharpRepo)\src\LibVLCSharp\bin\Release\netstandard2.0\LibVLCSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="FMODUnity"><HintPath>$(GamePath)\BOXROOM_Data\Managed\FMODUnity.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GamePath)\BOXROOM_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>

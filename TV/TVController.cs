@@ -13,8 +13,6 @@ namespace Boxroom_TV.TV;
 public sealed class TVController : MonoBehaviour
 {
     private static readonly List<TVController> All = new();
-    private const float MinimumAudioDistance = 0.5f;
-    private const float MaximumAudioDistance = 8f;
 
     private Renderer targetRenderer;
     private int materialIndex;
@@ -39,6 +37,8 @@ public sealed class TVController : MonoBehaviour
     private int loadGeneration;
     private bool showAdvancedRemote;
     private bool showUrlEntry;
+    private bool temporaryPlayback;
+    private TVController temporaryLeader;
     private string networkUrl = string.Empty;
     private ModMenu remoteMenu;
 
@@ -53,6 +53,84 @@ public sealed class TVController : MonoBehaviour
     internal static void RefreshAllSettings()
     {
         foreach (TVController television in All.ToArray()) television.ApplyGlow();
+    }
+
+    internal static List<TVController> DiscoverAll()
+    {
+        foreach (GameImagePainter painter in Resources.FindObjectsOfTypeAll<GameImagePainter>())
+        {
+            if (painter == null || !painter.gameObject.activeInHierarchy || !painter.gameObject.scene.IsValid()) continue;
+            SteamShelf.Placeables.PlacementTag tag = painter.GetComponent<SteamShelf.Placeables.PlacementTag>();
+            For(painter, tag);
+        }
+        return All.Where(controller => controller != null && controller.gameObject.activeInHierarchy).Distinct().ToList();
+    }
+
+    internal TVPlaybackSnapshot CaptureSnapshot() => new()
+    {
+        Videos = new List<string>(videos),
+        CurrentIndex = currentIndex,
+        PlaybackTime = player?.isPrepared == true ? player.time : 0,
+        Volume = volume,
+        Brightness = brightness,
+        Powered = powered,
+        Loop = loop,
+        WasPlaying = player?.isPlaying == true
+    };
+
+    internal void PlayTemporarySource(string source, string title, bool audible)
+    {
+        temporaryPlayback = true;
+        temporaryLeader = null;
+        videos = new List<string> { source };
+        currentIndex = 0;
+        originalPath = source;
+        powered = true;
+        loop = true;
+        volume = audible ? Mathf.Clamp01(Core.DefaultVolume.Value) : 0f;
+        player.isLooping = true;
+        LoadCurrent();
+    }
+
+    internal void FollowTemporarySource(TVController leader, string source)
+    {
+        temporaryPlayback = true;
+        temporaryLeader = leader;
+        loadGeneration++;
+        player?.Stop();
+        videos = new List<string> { source };
+        currentIndex = 0;
+        originalPath = source;
+        powered = true;
+        loop = false;
+        volume = 0f;
+        ApplyScreen();
+        ApplyGlow();
+    }
+
+    internal void RestoreSnapshot(TVPlaybackSnapshot snapshot)
+    {
+        if (snapshot == null) return;
+        temporaryPlayback = false;
+        temporaryLeader = null;
+        player.ResetDecoder();
+        videos = new List<string>(snapshot.Videos ?? new List<string>());
+        currentIndex = videos.Count == 0 ? 0 : Mathf.Clamp(snapshot.CurrentIndex, 0, videos.Count - 1);
+        volume = snapshot.Volume;
+        brightness = snapshot.Brightness;
+        powered = snapshot.Powered;
+        loop = snapshot.Loop;
+        player.isLooping = loop;
+        if (videos.Count > 0) LoadCurrent(snapshot.PlaybackTime);
+        else
+        {
+            player.Stop();
+            originalPath = null;
+            ApplyScreen();
+            ApplyGlow();
+        }
+        if ((!powered || !snapshot.WasPlaying) && player != null) player.prepareCompleted += prepared => prepared.Pause();
+        SaveState();
     }
 
     private void Setup(TVDisplay display)
@@ -93,6 +171,8 @@ public sealed class TVController : MonoBehaviour
 
     public void Play(MovieItem movie)
     {
+        if (BoxroomTvApi.IsSynchronizedPlaybackActive)
+            BoxroomTvApi.StopSynchronizedPlayback();
         if (movie == null || movie.VideoPaths.Count == 0) return;
         List<string> requested = movie.VideoPaths.Where(File.Exists).ToList();
         if (videos.SequenceEqual(requested) && player != null && player.isPrepared)
@@ -110,6 +190,8 @@ public sealed class TVController : MonoBehaviour
 
     public void ShowRemote()
     {
+        if (BoxroomTvApi.IsSynchronizedPlaybackActive)
+            BoxroomTvApi.StopSynchronizedPlayback();
         string title = videos.Count == 0 ? "No video loaded" : DisplayTitle(videos[currentIndex]);
         var menu = ModsUi.CreateMenu(Core.OwnerId + ".remote", "Boxroom-TV Remote", title);
         remoteMenu = menu;
@@ -359,11 +441,16 @@ public sealed class TVController : MonoBehaviour
 
     private void Update()
     {
-        if (player != null)
+        if (temporaryLeader != null)
         {
-            Camera camera = Camera.main;
-            float falloff = camera == null ? 0f : Mathf.Clamp01(Mathf.InverseLerp(MaximumAudioDistance, MinimumAudioDistance, Vector3.Distance(camera.transform.position, transform.position)));
-            player.volume = volume * falloff;
+            Texture mirrored = ActivePlaybackTexture;
+            if (powered && mirrored != null && screenMaterial?.mainTexture != mirrored)
+                ApplyScreen();
+        }
+        else if (player != null)
+        {
+            player.SetSpatialAudio(targetRenderer != null ? targetRenderer.bounds.center : transform.position,
+                volume, Core.AudioDistance.Value);
 
             // VLC creates its external Unity texture after playback has started.
             // Attach it as soon as the first frame becomes available instead of
@@ -373,8 +460,8 @@ public sealed class TVController : MonoBehaviour
         }
 
         saveTimer += Time.deltaTime;
-        if (videos.Count > 0 && saveTimer >= 5f) { saveTimer = 0; SaveState(); }
-        if (!Core.AmbientGlow.Value || !powered || player?.texture == null) return;
+        if (!temporaryPlayback && videos.Count > 0 && saveTimer >= 5f) { saveTimer = 0; SaveState(); }
+        if (!Core.AmbientGlow.Value || !powered || ActivePlaybackTexture == null) return;
         glowTimer += Time.deltaTime;
         if (glowTimer >= 0.12f) { glowTimer = 0; SampleGlow(); }
     }
@@ -387,9 +474,9 @@ public sealed class TVController : MonoBehaviour
             screenMaterial.mainTexture = Texture2D.blackTexture;
             RestoreIdleTextureMapping();
         }
-        else if (player?.texture != null)
+        else if (ActivePlaybackTexture != null)
         {
-            screenMaterial.mainTexture = player.texture;
+            screenMaterial.mainTexture = ActivePlaybackTexture;
             RestoreIdleTextureMapping();
         }
         else
@@ -413,9 +500,11 @@ public sealed class TVController : MonoBehaviour
 
     private void SampleGlow()
     {
+        Texture sourceTexture = ActivePlaybackTexture;
+        if (sourceTexture == null) return;
         glowSample ??= new RenderTexture(4, 4, 0, RenderTextureFormat.ARGB32);
         glowPixels ??= new Texture2D(4, 4, TextureFormat.RGB24, false);
-        Graphics.Blit(player.texture, glowSample);
+        Graphics.Blit(sourceTexture, glowSample);
         RenderTexture previous = RenderTexture.active;
         RenderTexture.active = glowSample;
         glowPixels.ReadPixels(new Rect(0, 0, 4, 4), 0, 0);
@@ -428,6 +517,7 @@ public sealed class TVController : MonoBehaviour
     }
 
     private string FormatTime() => player?.isPrepared == true ? $"{Format(player.time)} / {Format(player.length)}" : "Not ready";
+    private Texture ActivePlaybackTexture => temporaryLeader != null ? temporaryLeader.player?.texture : player?.texture;
     private static string Format(double seconds) => $"{Math.Floor(seconds / 60):0}:{Math.Floor(seconds % 60):00}";
 
     private void RestoreState()
@@ -454,6 +544,7 @@ public sealed class TVController : MonoBehaviour
 
     private void SaveState()
     {
+        if (temporaryPlayback) return;
         if (string.IsNullOrWhiteSpace(stateKey)) return;
         TVStateStore.Save(stateKey, new TVSaveEntry
         {
@@ -471,4 +562,16 @@ public sealed class TVController : MonoBehaviour
         if (glowPixels != null) Destroy(glowPixels);
         if (screenMaterial != null) Destroy(screenMaterial);
     }
+}
+
+internal sealed class TVPlaybackSnapshot
+{
+    internal List<string> Videos;
+    internal int CurrentIndex;
+    internal double PlaybackTime;
+    internal float Volume;
+    internal float Brightness;
+    internal bool Powered;
+    internal bool Loop;
+    internal bool WasPlaying;
 }

@@ -11,7 +11,7 @@ using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "3.3.1", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "3.4.4", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 [assembly: MelonAdditionalDependencies("BR_MediaAPI", "ModsPanel")]
 
@@ -23,6 +23,7 @@ public sealed class Core : MelonMod
     internal const string OwnerId = "com.midgetbrony.boxroom-tv";
 
     internal static MelonPreferences_Entry<float> DefaultVolume;
+    internal static MelonPreferences_Entry<float> AudioDistance;
     internal static MelonPreferences_Entry<bool> AmbientGlow;
     internal static MelonPreferences_Entry<bool> ResumePlayback;
     private static readonly ConcurrentQueue<Action> MainThreadActions = new();
@@ -34,6 +35,7 @@ public sealed class Core : MelonMod
     {
         MelonPreferences_Category preferences = MelonPreferences.CreateCategory("Boxroom-TV");
         DefaultVolume = preferences.CreateEntry("DefaultVolume", 0.8f, "Default volume");
+        AudioDistance = preferences.CreateEntry("AudioDistance", 8f, "Maximum TV audio distance");
         AmbientGlow = preferences.CreateEntry("AmbientGlow", true, "Ambient screen glow");
         ResumePlayback = preferences.CreateEntry("ResumePlayback", true, "Resume playback");
 
@@ -95,13 +97,10 @@ public sealed class Core : MelonMod
     private void TryUseTelevision()
     {
         if (!TryGetLookedAtTelevision(out GameImagePainter painter, out PlacementTag tag)) return;
-        TVController television = TVController.For(painter, tag);
-        if (television == null) return;
-
         if (interactionTool?.CurrentHeldMediaItem is MovieItem movie)
-            television.Play(movie);
+            TVController.For(painter, tag)?.Play(movie);
         else if (interactionTool != null && !interactionTool.IsHoldingProp)
-            television.ShowRemote();
+            TVController.For(painter, tag)?.ShowRemote();
     }
 
     private void TryOpenLookedAtTelevision()
@@ -132,6 +131,8 @@ public sealed class Core : MelonMod
         ModsPanelApi.RegisterSection(OwnerId, "Boxroom-TV", 120).Clear()
             .AddSlider("volume", "Default TV volume", () => DefaultVolume.Value,
                 value => { DefaultVolume.Value = Mathf.Clamp01(value); MelonPreferences.Save(); }, 0f, 1f, false, "0%")
+            .AddSlider("audio-distance", "TV audio distance", () => AudioDistance.Value,
+                value => { AudioDistance.Value = Mathf.Clamp(value, 1f, 25f); MelonPreferences.Save(); }, 1f, 25f, false, "0.0 m")
             .AddToggle("glow", "Ambient screen glow", () => AmbientGlow.Value,
                 value => { AmbientGlow.Value = value; MelonPreferences.Save(); TVController.RefreshAllSettings(); })
             .AddToggle("resume", "Resume saved playback", () => ResumePlayback.Value,

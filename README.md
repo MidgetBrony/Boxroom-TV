@@ -60,6 +60,11 @@ Playback position, power, volume, brightness, loop state, and the current file a
 
 The TV remote also accepts direct HTTP video links, YouTube pages, and Twitch channels, clips, or VODs. The packaged yt-dlp resolver converts supported webpage links into temporary streams; VLC receives video at up to 720p. YouTube's separate video and audio streams are attached together during playback.
 
+Other local mods can use `BoxroomTvApi.PlaySynchronized` for temporary playback
+across supported displays and `StopSynchronizedPlayback` to restore each
+display's previous state. Temporary playback uses one decoding leader with
+follower textures and spatial audio from the nearest display.
+
 ## VLC playback
 
 Boxroom-TV 3 uses the open-source VLC for Unity native texture bridge and LibVLCSharp. The original media file is opened immediately by LibVLC; it is not transcoded, copied, or changed. MKV, WebM, HEVC, AV1, VP9, Opus and other formats supported by the packaged LibVLC build use the same playback path. Hardware decoding is selected by LibVLC when available.

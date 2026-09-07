@@ -14,7 +14,9 @@ internal readonly struct TVDisplay
     {
         "Placeable_televisions_",
         "Placeable_electronics_monitor",
-        "Placeable_Modern_Tech_TV"
+        "Placeable_Modern_Tech_TV",
+        "Placeable_Modern_Tech_Screen_",
+        "Placeable_Office_Electronics_Laptop"
     };
 
     private static readonly FieldInfo RendererField = AccessTools.Field(typeof(GameImagePainter), "targetRenderer");
