@@ -41,6 +41,7 @@ public sealed class TVController : MonoBehaviour
     private TVController temporaryLeader;
     private string networkUrl = string.Empty;
     private ModMenu remoteMenu;
+    private bool setupComplete;
 
     public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
@@ -80,6 +81,7 @@ public sealed class TVController : MonoBehaviour
 
     internal void PlayTemporarySource(string source, string title, bool audible)
     {
+        EnsurePlayer();
         temporaryPlayback = true;
         temporaryLeader = null;
         videos = new List<string> { source };
@@ -111,6 +113,7 @@ public sealed class TVController : MonoBehaviour
     internal void RestoreSnapshot(TVPlaybackSnapshot snapshot)
     {
         if (snapshot == null) return;
+        EnsurePlayer();
         temporaryPlayback = false;
         temporaryLeader = null;
         player.ResetDecoder();
@@ -135,7 +138,8 @@ public sealed class TVController : MonoBehaviour
 
     private void Setup(TVDisplay display)
     {
-        if (player != null) return;
+        if (setupComplete) return;
+        setupComplete = true;
         targetRenderer = display.Renderer;
         materialIndex = display.MaterialIndex;
         Material[] materials = targetRenderer.materials;
@@ -149,13 +153,6 @@ public sealed class TVController : MonoBehaviour
         stateKey = TVStateStore.CreateKey(transform, tagId: GetComponent<SteamShelf.Placeables.PlacementTag>()?.PlaceableData?.ID);
         volume = Mathf.Clamp01(Core.DefaultVolume.Value);
 
-        player = gameObject.AddComponent<VlcPlayerBackend>();
-        player.playOnAwake = false;
-        player.isLooping = loop;
-        player.errorReceived += OnPlayerError;
-        player.loopPointReached += OnPlaybackReachedEnd;
-        player.prepareCompleted += prepared => { if (powered) prepared.Play(); };
-
         var glowObject = new GameObject("Boxroom-TV Glow");
         glowObject.transform.SetParent(transform, false);
         glowObject.transform.position = targetRenderer.bounds.center;
@@ -167,6 +164,18 @@ public sealed class TVController : MonoBehaviour
         All.Add(this);
         RestoreState();
         ApplyGlow();
+    }
+
+    private VlcPlayerBackend EnsurePlayer()
+    {
+        if (player != null) return player;
+        player = gameObject.AddComponent<VlcPlayerBackend>();
+        player.playOnAwake = false;
+        player.isLooping = loop;
+        player.errorReceived += OnPlayerError;
+        player.loopPointReached += OnPlaybackReachedEnd;
+        player.prepareCompleted += prepared => { if (powered) prepared.Play(); };
+        return player;
     }
 
     public void Play(MovieItem movie)
@@ -312,6 +321,7 @@ public sealed class TVController : MonoBehaviour
         powered = true;
         originalPath = requested;
         int generation = ++loadGeneration;
+        EnsurePlayer();
         player.audioSlaveUrl = audioUrl;
         ApplyScreen();
         BeginPreparedPlayback(playbackUrl, startTime, generation);
@@ -363,7 +373,8 @@ public sealed class TVController : MonoBehaviour
 
     private void LoadCurrent(double startTime = 0)
     {
-        if (player == null || videos.Count == 0) return;
+        if (videos.Count == 0) return;
+        EnsurePlayer();
         currentIndex = ((currentIndex % videos.Count) + videos.Count) % videos.Count;
         originalPath = videos[currentIndex];
         int generation = ++loadGeneration;
@@ -418,8 +429,8 @@ public sealed class TVController : MonoBehaviour
     private void TogglePower()
     {
         powered = !powered;
-        if (powered) { player.enabled = true; if (videos.Count > 0) player.Play(); }
-        else { player.Pause(); player.enabled = false; }
+        if (powered && videos.Count > 0) { EnsurePlayer().enabled = true; player.Play(); }
+        else if (player != null) { player.Pause(); player.enabled = powered; }
         ApplyScreen();
         ApplyGlow();
         SaveState();
@@ -532,7 +543,6 @@ public sealed class TVController : MonoBehaviour
         volume = Mathf.Clamp01(saved.Volume);
         powered = saved.IsOn;
         loop = saved.IsLooping;
-        player.isLooping = loop;
         if (NeedsWebResolver(videos[currentIndex])) StartCoroutine(ResolveAndPlayNetworkUrl(videos[currentIndex], saved.PlaybackTime));
         else LoadCurrent(saved.PlaybackTime);
         if (!powered) player.prepareCompleted += prepared => prepared.Pause();

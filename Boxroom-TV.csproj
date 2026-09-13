@@ -7,8 +7,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Boxroom_TV</RootNamespace>
     <AssemblyName>Boxroom_TV</AssemblyName>
-    <AssemblyVersion>3.4.4.0</AssemblyVersion>
-    <FileVersion>3.4.4.0</FileVersion>
+    <AssemblyVersion>3.4.5.0</AssemblyVersion>
+    <FileVersion>3.4.5.0</FileVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>
