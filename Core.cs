@@ -11,7 +11,7 @@ using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "3.4.5", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "3.4.6", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 [assembly: MelonAdditionalDependencies("BR_MediaAPI", "ModsPanel")]
 
@@ -78,6 +78,14 @@ public sealed class Core : MelonMod
             try { action(); } catch (Exception exception) { LoggerInstance.Error(exception.ToString()); }
         if (interactionTool == null)
             interactionTool = UnityEngine.Object.FindFirstObjectByType<PlayerInteractionTool>();
+
+        if (!Singleton<PlayerToolController>.HasInstance() ||
+            !Singleton<PlayerToolController>.Instance.TryGetCurrentToolAsType(out PlayerInteractionTool activeInteractionTool) ||
+            activeInteractionTool != interactionTool)
+        {
+            primaryWasPressed = false;
+            return;
+        }
 
         PlayerInputContext input = Singleton<InputManager>.Instance?.CurrentPlayerInputContext;
         bool primaryPressed = input != null && input.PrimaryPressedThisFrame;
