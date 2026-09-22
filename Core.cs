@@ -12,7 +12,7 @@ using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.1-beta.1", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.1-beta.2", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 [assembly: MelonAdditionalDependencies("ModsPanel")]
 
