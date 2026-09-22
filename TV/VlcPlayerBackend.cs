@@ -135,17 +135,23 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
         media = new Media(url, networkSource ? FromType.FromLocation : FromType.FromPath, ":avcodec-hw=any");
         if (!string.IsNullOrWhiteSpace(audioSlaveUrl)) media.AddOption(":input-slave=" + audioSlaveUrl);
         mediaPlayer.Media = media;
+        fmodAudio?.Resume();
         if (!mediaPlayer.Play()) OnError("VLC rejected the media before playback started.");
     }
 
     internal void Play()
     {
         if (mediaPlayer == null) return;
+        fmodAudio?.Resume();
         if (isPrepared) mediaPlayer.SetPause(false);
         else if (media != null) mediaPlayer.Play();
     }
 
-    internal void Pause() => mediaPlayer?.SetPause(true);
+    internal void Pause()
+    {
+        mediaPlayer?.SetPause(true);
+        fmodAudio?.Suspend();
+    }
 
     internal string SelectedAudioTrack => GetSelectedTrackName(TrackType.Audio, "Default");
     internal string SelectedSubtitleTrack => GetSelectedTrackName(TrackType.Text, "Off");
@@ -164,6 +170,7 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
     internal void Stop()
     {
         endHandled = true;
+        fmodAudio?.Suspend();
         try { mediaPlayer?.Stop(); } catch { }
         Media current = mediaPlayer?.Media;
         current?.Dispose();
@@ -218,6 +225,8 @@ internal sealed class VlcPlayerBackend : MonoBehaviour
             prepareCompleted?.Invoke(this);
         }
     }
+
+    private void OnDisable() => fmodAudio?.Suspend();
 
     private void OnPlaybackEnded()
     {

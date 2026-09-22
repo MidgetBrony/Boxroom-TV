@@ -14,6 +14,9 @@ internal sealed class FmodVlcAudio : IDisposable
     private const int SampleRate = 48000;
     private const int Channels = 2;
     private readonly object gate = new();
+    // VLC delivers PCM in irregular blocks. Keep enough headroom to absorb
+    // decoder scheduling jitter; distance/disable transitions explicitly flush
+    // this buffer so its capacity cannot become stale return audio.
     private readonly float[] ring = new float[SampleRate * Channels * 4];
     private readonly MediaPlayer player;
     private int read, write, count;
@@ -21,6 +24,7 @@ internal sealed class FmodVlcAudio : IDisposable
     private Channel channel;
     private ChannelGroup musicGroup;
     private bool disposed, loggedInput, loggedOutput;
+    private bool acceptDecodedAudio = true;
     private SOUND_PCMREAD_CALLBACK pcmReadCallback;
 
     internal FmodVlcAudio(MediaPlayer mediaPlayer)
@@ -36,6 +40,14 @@ internal sealed class FmodVlcAudio : IDisposable
         if (channel.hasHandle()) channel.setVolume(Mathf.Clamp01(value));
     }
 
+    internal void Suspend()
+    {
+        SetOutputActive(false);
+        if (channel.hasHandle()) channel.setVolume(0f);
+    }
+
+    internal void Resume() => SetOutputActive(true);
+
     internal void Update(Vector3 position, float volume, float maximumDistance)
     {
         if (!channel.hasHandle()) return;
@@ -47,7 +59,14 @@ internal sealed class FmodVlcAudio : IDisposable
         Camera listener = Camera.main;
         float falloff = listener == null ? 0f : Mathf.Clamp01(Mathf.InverseLerp(maxDistance, 0.5f,
             Vector3.Distance(listener.transform.position, position)));
-        channel.setVolume(Mathf.Clamp01(volume) * falloff);
+        float effectiveVolume = Mathf.Clamp01(volume) * falloff;
+
+        // FMOD may virtualize an inaudible 3D channel and stop requesting PCM,
+        // while VLC continues decoding on its own thread. Never retain that old
+        // audio: when the listener returns, begin with the current VLC blocks.
+        bool becameAudible = SetOutputActive(effectiveVolume > 0.001f);
+        if (becameAudible) ResynchronizeDecoder();
+        channel.setVolume(effectiveVolume);
     }
 
     private void StartFmod()
@@ -84,6 +103,7 @@ internal sealed class FmodVlcAudio : IDisposable
         int sampleCount = checked((int)frameCount * Channels);
         lock (gate)
         {
+            if (!acceptDecodedAudio) return;
             for (int i = 0; i < sampleCount; i++) Enqueue(input[i]);
         }
     }
@@ -118,6 +138,35 @@ internal sealed class FmodVlcAudio : IDisposable
         ring[write] = value;
         write = (write + 1) % ring.Length;
         count++;
+    }
+
+    private bool SetOutputActive(bool active)
+    {
+        lock (gate)
+        {
+            if (acceptDecodedAudio == active)
+            {
+                if (!active) read = write = count = 0;
+                return false;
+            }
+
+            read = write = count = 0;
+            acceptDecodedAudio = active;
+            return active;
+        }
+    }
+
+    private void ResynchronizeDecoder()
+    {
+        // Re-entering audible range after FMOD virtualization needs both sides
+        // of VLC restarted from one clock position. Clearing PCM alone removes
+        // the large backlog but can leave the freshly decoded audio a fraction
+        // behind the video frame already being displayed.
+        if (!player.IsPlaying || !player.IsSeekable) return;
+        long currentTime = player.Time;
+        if (currentTime <= 0) return;
+        if (player.SetTime(currentTime, true))
+            MelonLogger.Msg("[Boxroom-TV] Resynchronized VLC audio and video after returning to audible range.");
     }
 
     public void Dispose()
