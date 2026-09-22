@@ -28,6 +28,7 @@
     <Reference Include="UnityEngine.JSONSerializeModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.JSONSerializeModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.VideoModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.VideoModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(GamePath)\BOXROOM_Data\Managed\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Unity.InputSystem"><HintPath>$(GamePath)\BOXROOM_Data\Managed\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MelonLoader"><HintPath>$(GamePath)\MelonLoader\net35\MelonLoader.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(GamePath)\MelonLoader\net35\0Harmony.dll</HintPath><Private>false</Private></Reference>
