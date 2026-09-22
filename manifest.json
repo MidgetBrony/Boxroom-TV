@@ -11,11 +11,6 @@
       "manifest": "https://raw.githubusercontent.com/MidgetBrony/ModsPanel/refs/heads/master/manifest.json",
       "minimumVersion": "2.6.2",
       "required": true
-    },
-    {
-      "manifest": "https://raw.githubusercontent.com/MidgetBrony/BR-MediaAPI/refs/heads/main/manifest.json",
-      "minimumVersion": "1.0.1",
-      "required": true
     }
   ],
   "release": {

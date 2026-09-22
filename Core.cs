@@ -1,25 +1,25 @@
-using BR_MediaAPI;
 using Boxroom_TV.TV;
 using Boxroom_TV.Videos;
+using HarmonyLib;
 using MelonLoader;
 using ModsPanel;
 using SteamShelf;
 using SteamShelf.Input;
+using SteamShelf.Media.Videos;
 using SteamShelf.Placeables;
 using SteamShelf.PlayerTools;
 using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "3.4.6", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.1-beta.1", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
-[assembly: MelonAdditionalDependencies("BR_MediaAPI", "ModsPanel")]
+[assembly: MelonAdditionalDependencies("ModsPanel")]
 
 namespace Boxroom_TV;
 
 public sealed class Core : MelonMod
 {
-    internal const int MovieMediaTypeId = 1200;
     internal const string OwnerId = "com.midgetbrony.boxroom-tv";
 
     internal static MelonPreferences_Entry<float> DefaultVolume;
@@ -39,37 +39,9 @@ public sealed class Core : MelonMod
         AmbientGlow = preferences.CreateEntry("AmbientGlow", true, "Ambient screen glow");
         ResumePlayback = preferences.CreateEntry("ResumePlayback", true, "Resume playback");
 
-        var definition = new MediaTypeDefinition
-        {
-            Id = MovieMediaTypeId,
-            Key = OwnerId + ".movies",
-            DisplayName = "Movies",
-            ModelType = typeof(MovieItem),
-            Library = MovieLibrary.Instance,
-            AllowOnShelves = true,
-            CreateUnplacedMediaBox = true,
-            UnplacedMediaBoxName = "Movies Box",
-            UnplacedMediaBoxDescription = "All movies and shows that are not currently placed",
-            OnOpen = item => ShowMovieHelp((MovieItem)item),
-            Inspect = new MediaInspectDefinition
-            {
-                PrimaryActionLabel = "Play on TV",
-                OnPrimaryAction = context => ShowMovieHelp((MovieItem)context.Item)
-            },
-            LibraryFolder = new MediaLibraryFolderOptions
-            {
-                DefaultPath = MovieLibrary.DefaultLibraryRoot,
-                Label = "Movie Library Location",
-                PanelTitle = "Boxroom-TV",
-                Reload = MovieLibrary.Instance.Reload,
-                GetStatus = MovieLibrary.Instance.GetStatus
-            }
-        };
-
-        SharedMediaCasePrefabs.Configure(definition);
-        MediaApi.Register(definition);
+        HarmonyInstance.PatchAll(typeof(Core).Assembly);
         RegisterSettings();
-        LoggerInstance.Msg("Boxroom-TV 3 initialized with BR-MediaAPI and ModsPanel.");
+        LoggerInstance.Msg("Boxroom-TV 4 initialized with native BOXROOM Video media, VLC, and ModsPanel.");
     }
 
     public override void OnUpdate()
@@ -105,9 +77,7 @@ public sealed class Core : MelonMod
     private void TryUseTelevision()
     {
         if (!TryGetLookedAtTelevision(out GameImagePainter painter, out PlacementTag tag)) return;
-        if (interactionTool?.CurrentHeldMediaItem is MovieItem movie)
-            TVController.For(painter, tag)?.Play(movie);
-        else if (interactionTool != null && !interactionTool.IsHoldingProp)
+        if (interactionTool != null && !interactionTool.IsHoldingProp)
             TVController.For(painter, tag)?.ShowRemote();
     }
 
@@ -147,12 +117,12 @@ public sealed class Core : MelonMod
                 value => { ResumePlayback.Value = value; MelonPreferences.Save(); })
             .AddLabel("vlc-status", "Playback is powered by the open-source VLC, LibVLCSharp, and VLC for Unity projects. Original media plays directly without conversion.")
             .AddLabel("credits", "Video playback credits: VideoLAN contributors, LibVLCSharp contributors, and VLC for Unity contributors. Licensed under LGPL 2.1 or later.")
-            .AddLabel("help", "Put each movie or TV season in its own folder. Cases can contain multiple video files as episodes. Hold a case and use it on a supported TV.");
+            .AddLabel("help", "Uses BOXROOM's native Video cases, shelves, and Video Container. Recursive folders, NFO titles, seasons, VLC playback, audio/subtitle selection, and online playback are added by Boxroom-TV.");
     }
 
-    private static void ShowMovieHelp(MovieItem movie)
+    internal static void ShowMovieHelp(VideoData movie)
     {
         string detail = movie == null ? "Movie" : $"{movie.DisplayName} ({movie.VideoPaths.Count} file{(movie.VideoPaths.Count == 1 ? "" : "s")})";
-        ModsUi.ShowToast($"{detail}: hold the case and use it on a TV.", 5f);
+        ModsUi.ShowToast($"{detail}: hold the native Video case and use it on a TV.", 5f);
     }
 }

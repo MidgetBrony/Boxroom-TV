@@ -7,15 +7,15 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Boxroom_TV</RootNamespace>
     <AssemblyName>Boxroom_TV</AssemblyName>
-    <AssemblyVersion>3.4.6.0</AssemblyVersion>
-    <FileVersion>3.4.6.0</FileVersion>
+    <AssemblyVersion>4.0.1.0</AssemblyVersion>
+    <FileVersion>4.0.1.0</FileVersion>
+    <InformationalVersion>4.0.1-beta.1</InformationalVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\BR-MediaAPI\BR-MediaAPI.csproj" />
     <Reference Include="ModsPanel"><HintPath>..\ModsPanel\bin\Release\netstandard2.1\ModsPanel.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="LibVLCSharp"><HintPath>$(LibVLCSharpRepo)\src\LibVLCSharp\bin\Release\netstandard2.0\LibVLCSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="FMODUnity"><HintPath>$(GamePath)\BOXROOM_Data\Managed\FMODUnity.dll</HintPath><Private>false</Private></Reference>
@@ -56,8 +56,6 @@
     <Copy SourceFiles="THIRD-PARTY-NOTICES.md;Licenses\LGPL-2.1.txt" DestinationFolder="$(GamePath)\UserData\Boxroom-TV\Licenses" SkipUnchangedFiles="true" />
     <MakeDir Directories="$(GamePath)\UserData\Boxroom-TV\Tools" />
     <Copy SourceFiles="Tools\yt-dlp.exe" DestinationFolder="$(GamePath)\UserData\Boxroom-TV\Tools" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="..\BR-MediaAPI\bin\$(Configuration)\netstandard2.1\BR_MediaAPI.dll" DestinationFolder="$(GamePath)\Mods" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="..\BR-MediaAPI\Assets\brmediaapi_assets" DestinationFolder="$(GamePath)\Mods" SkipUnchangedFiles="true" />
     <Copy SourceFiles="..\ModsPanel\bin\Release\netstandard2.1\ModsPanel.dll" DestinationFolder="$(GamePath)\Mods" SkipUnchangedFiles="true" />
   </Target>
 </Project>

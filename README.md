@@ -1,20 +1,19 @@
-# Boxroom-TV 3
+# Boxroom-TV 4
 
-Boxroom-TV turns BOXROOM's flatscreen TVs, CRTs, monitors, and Modern Tech TV into video players. Movies and TV seasons are first-class BOXROOM media powered by BR-MediaAPI: they have their own cases, shelves, inspector entry, save identity, and a Movies Box in the furniture catalogue.
+Boxroom-TV extends BOXROOM's native Video system instead of registering a second movie type. BOXROOM owns the type-2 Video cases, shelves, inspector, save identity, art editing, and Video Container; Boxroom-TV adds recursive/NFO-aware discovery, broad VLC playback, online sources, remote audio/subtitle controls, resume state, and synchronized playback.
 
 ## Requirements
 
 - BOXROOM with MelonLoader
-- `BR_MediaAPI.dll` and its `brmediaapi_assets` bundle
 - `ModsPanel.dll`
 - `Boxroom_TV.dll`
 - `LibVLCSharp.dll`, the VLC Unity native bridge, and the LibVLC 4 Windows runtime supplied by the Boxroom-TV manifest
 
-LocalWorkshop is not required by the current release because Boxroom-TV 3 does not ship custom TV furniture. It is the intended catalogue SDK if custom TV placeables are added later.
+LocalWorkshop is not required by the current release because Boxroom-TV 4 does not ship custom TV furniture. It is the intended catalogue SDK if custom TV placeables are added later.
 
 ## Movie library
 
-Choose **Movie Library Location** in ModsPanel. Put each movie or TV season in its own folder:
+Choose BOXROOM's native **Video Library Location**. Put each movie or TV season in its own folder:
 
 ```text
 Movies/
@@ -54,7 +53,7 @@ The show title and default `<uniqueid>` are read from `tvshow.nfo` when present;
 
 Movies support Kodi's recommended `<VideoFileName>.nfo` form and the alternative `movie.nfo`. Boxroom-TV reads `<title>` and the default `<uniqueid>` from these files. Playback ordering remains filename-based, so episode files should use `S01E01`, and multipart movies should use Kodi-style `part1`, `part2`, `cd1`, or `cd2` names.
 
-Once refreshed, place a **Movies Box** and take cases from it. Hold a movie case and use it on a supported TV. Use an empty hand on the TV—or press `T` while looking at it—to open the controller-friendly remote.
+Once refreshed, place BOXROOM's native **Video Container** and take native Video cases from it. Hold a Video case and use it on a supported TV. Native inspector and in-hand play actions are routed through VLC. Use an empty hand on the TV—or press `T` while looking at it—to open the controller-friendly remote.
 
 Playback position, power, volume, brightness, loop state, and the current file are stored in `UserData/Boxroom-TV/TVState.json`.
 
@@ -67,7 +66,7 @@ follower textures and spatial audio from the nearest display.
 
 ## VLC playback
 
-Boxroom-TV 3 uses the open-source VLC for Unity native texture bridge and LibVLCSharp. The original media file is opened immediately by LibVLC; it is not transcoded, copied, or changed. MKV, WebM, HEVC, AV1, VP9, Opus and other formats supported by the packaged LibVLC build use the same playback path. Hardware decoding is selected by LibVLC when available.
+Boxroom-TV 4 uses the open-source VLC for Unity native texture bridge and LibVLCSharp. The original media file is opened immediately by LibVLC; it is not transcoded, copied, or changed. MKV, WebM, HEVC, AV1, VP9, Opus and other formats supported by the packaged LibVLC build use the same playback path. Hardware decoding is selected by LibVLC when available.
 
 The native runtime is installed under `BOXROOM_Data/Plugins/x86_64` because Unity must discover the graphics bridge before MelonLoader initializes mods. The release manifest owns this runtime as a separately versioned dependency. Do not replace only one DLL: `VLCUnityPlugin.dll`, `LibVLCSharp.dll`, `libvlc.dll`, `libvlccore.dll`, and the `plugins` tree are a matched set.
 
@@ -90,6 +89,16 @@ The Windows native bridge is built from the sibling `vlc-unity` repository with 
 
 Deployment is opt-in with `-p:DeployToGame=true`. It deploys the managed mods plus the matched VLC runtime and native Unity bridge. A successful build validates compilation and file deployment only; native plugin loading, rendered video, audio, controls, and save restoration still require an in-game test.
 
+## Migration from Boxroom-TV 3 / media type 1200
+
+Boxroom-TV 4 performs an idempotent migration after the enhanced native library has scanned. Legacy type-1200 IDs are mapped to their native folder identities; loose `BR_MediaAPI_Case_1200` objects become native `Placeable_VideoBoxProp` cases, the old Movies Box becomes BOXROOM's native Video Container, and type-1200 shelf entries become type 2.
+
+The original `RoomState.json` is copied once to `RoomState.json.boxroom-tv-type1200.bak` before the migrated in-memory state is saved. Unmatched IDs are deliberately left unchanged and listed in `UserData/Boxroom-TV/MigrationReport.json`. `TVState.json` is not numerically rewritten because it stores playback paths rather than media-type IDs.
+
+If BOXROOM's native Video Library Location is empty, Boxroom-TV imports the old `BRMediaAPI.LibraryFolder.com.midgetbrony.boxroom-tv.movies` setting once.
+
+BR-MediaAPI is no longer a Boxroom-TV dependency. Other mods may still require it, so do not remove it solely because Boxroom-TV 4 no longer does.
+
 ## Migration from Boxroom-TV 1.x
 
-The old mod registered movies as fake Steam games with negative app IDs and patched the Games Box. Version 3 removes that design entirely. Move folders from the old `Mods/Boxroom-TV/VideoLibrary` directory to the selected Movie Library Location. Old placed fake-game cases and `VideoAppIds.json` are not used by version 3; take replacement cases from the new Movies Box.
+The old mod registered movies as fake Steam games with negative app IDs and patched the Games Box. Move folders from the old `Mods/Boxroom-TV/VideoLibrary` directory to BOXROOM's Video Library Location. Old placed fake-game cases and `VideoAppIds.json` cannot be mapped automatically; take replacement native cases from the Video Container.

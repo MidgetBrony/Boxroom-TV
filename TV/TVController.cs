@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using SteamShelf.Media.Videos;
 using UnityEngine;
 
 namespace Boxroom_TV.TV;
@@ -42,6 +43,8 @@ public sealed class TVController : MonoBehaviour
     private string networkUrl = string.Empty;
     private ModMenu remoteMenu;
     private bool setupComplete;
+
+    internal bool HasLoadedSource => videos.Count > 0;
 
     public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
@@ -178,7 +181,7 @@ public sealed class TVController : MonoBehaviour
         return player;
     }
 
-    public void Play(MovieItem movie)
+    public void Play(VideoData movie)
     {
         if (BoxroomTvApi.IsSynchronizedPlaybackActive)
             BoxroomTvApi.StopSynchronizedPlayback();
@@ -452,6 +455,7 @@ public sealed class TVController : MonoBehaviour
 
     private void Update()
     {
+        RefreshLiveScreenMaterial();
         if (temporaryLeader != null)
         {
             Texture mirrored = ActivePlaybackTexture;
@@ -479,6 +483,7 @@ public sealed class TVController : MonoBehaviour
 
     private void ApplyScreen()
     {
+        RefreshLiveScreenMaterial();
         if (screenMaterial == null) return;
         if (!powered || videos.Count == 0)
         {
@@ -502,6 +507,13 @@ public sealed class TVController : MonoBehaviour
     {
         screenMaterial.mainTextureScale = idleTextureScale;
         screenMaterial.mainTextureOffset = idleTextureOffset;
+    }
+
+    private void RefreshLiveScreenMaterial()
+    {
+        if (targetRenderer == null || materialIndex < 0 || materialIndex >= targetRenderer.sharedMaterials.Length) return;
+        Material live = targetRenderer.sharedMaterials[materialIndex];
+        if (live != null && live != screenMaterial) screenMaterial = live;
     }
 
     private void ApplyGlow()
