@@ -40,11 +40,45 @@ public sealed class TVController : MonoBehaviour
     private bool showUrlEntry;
     private bool temporaryPlayback;
     private TVController temporaryLeader;
+    private TVPlaybackSnapshot externalSnapshot;
+    private Texture externalTexture;
+    private string externalOwner;
+    private int externalClaimGeneration;
+    private int activeExternalClaim;
     private string networkUrl = string.Empty;
     private ModMenu remoteMenu;
     private bool setupComplete;
 
-    internal bool HasLoadedSource => videos.Count > 0;
+    internal bool HasLoadedSource => videos.Count > 0 || IsExternallyClaimed;
+    internal bool IsExternallyClaimed => activeExternalClaim != 0;
+    internal Bounds ClaimedScreenBounds
+    {
+        get
+        {
+            if (targetRenderer == null) return new Bounds(transform.position, Vector3.zero);
+            Mesh mesh = targetRenderer is SkinnedMeshRenderer skinned
+                ? skinned.sharedMesh
+                : targetRenderer.GetComponent<MeshFilter>()?.sharedMesh;
+            if (mesh == null || materialIndex < 0 || materialIndex >= mesh.subMeshCount)
+                return targetRenderer.bounds;
+
+            Bounds local = mesh.GetSubMesh(materialIndex).bounds;
+            Vector3 min = local.min;
+            Vector3 max = local.max;
+            Bounds world = new(targetRenderer.transform.TransformPoint(min), Vector3.zero);
+            for (int x = 0; x < 2; x++)
+            for (int y = 0; y < 2; y++)
+            for (int z = 0; z < 2; z++)
+                world.Encapsulate(targetRenderer.transform.TransformPoint(new Vector3(
+                    x == 0 ? min.x : max.x,
+                    y == 0 ? min.y : max.y,
+                    z == 0 ? min.z : max.z)));
+            return world;
+        }
+    }
+    internal Vector3 ClaimedScreenForward => targetRenderer != null
+        ? targetRenderer.transform.forward
+        : transform.forward;
 
     public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
@@ -82,6 +116,46 @@ public sealed class TVController : MonoBehaviour
         WasPlaying = player?.isPlaying == true
     };
 
+    internal bool TryBeginExternalClaim(string ownerId, string displayName, out int token)
+    {
+        token = 0;
+        if (IsExternallyClaimed) return false;
+
+        externalSnapshot = CaptureSnapshot();
+        player?.Pause();
+        externalTexture = null;
+        externalOwner = string.IsNullOrWhiteSpace(displayName) ? ownerId : displayName;
+        token = activeExternalClaim = ++externalClaimGeneration;
+        ApplyScreen();
+        ApplyGlow();
+        MelonLogger.Msg($"[Boxroom-TV] '{externalOwner}' claimed TV '{stateKey}'.");
+        return true;
+    }
+
+    internal bool IsExternalClaimActive(int token) => token != 0 && token == activeExternalClaim;
+
+    internal bool SetExternalTexture(int token, Texture texture)
+    {
+        if (!IsExternalClaimActive(token)) return false;
+        externalTexture = texture;
+        ApplyScreen();
+        ApplyGlow();
+        return true;
+    }
+
+    internal void ReleaseExternalClaim(int token)
+    {
+        if (!IsExternalClaimActive(token)) return;
+        TVPlaybackSnapshot snapshot = externalSnapshot;
+        string owner = externalOwner;
+        activeExternalClaim = 0;
+        externalSnapshot = null;
+        externalTexture = null;
+        externalOwner = null;
+        RestoreSnapshot(snapshot);
+        MelonLogger.Msg($"[Boxroom-TV] '{owner}' released TV '{stateKey}' and its previous state was restored.");
+    }
+
     internal void PlayTemporarySource(string source, string title, bool audible)
     {
         EnsurePlayer();
@@ -116,21 +190,20 @@ public sealed class TVController : MonoBehaviour
     internal void RestoreSnapshot(TVPlaybackSnapshot snapshot)
     {
         if (snapshot == null) return;
-        EnsurePlayer();
         temporaryPlayback = false;
         temporaryLeader = null;
-        player.ResetDecoder();
+        player?.ResetDecoder();
         videos = new List<string>(snapshot.Videos ?? new List<string>());
         currentIndex = videos.Count == 0 ? 0 : Mathf.Clamp(snapshot.CurrentIndex, 0, videos.Count - 1);
         volume = snapshot.Volume;
         brightness = snapshot.Brightness;
         powered = snapshot.Powered;
         loop = snapshot.Loop;
-        player.isLooping = loop;
+        if (player != null) player.isLooping = loop;
         if (videos.Count > 0) LoadCurrent(snapshot.PlaybackTime);
         else
         {
-            player.Stop();
+            player?.Stop();
             originalPath = null;
             ApplyScreen();
             ApplyGlow();
@@ -183,6 +256,11 @@ public sealed class TVController : MonoBehaviour
 
     public void Play(VideoData movie)
     {
+        if (IsExternallyClaimed)
+        {
+            ModsUi.ShowToast($"This TV is currently in use by {externalOwner}.");
+            return;
+        }
         if (BoxroomTvApi.IsSynchronizedPlaybackActive)
             BoxroomTvApi.StopSynchronizedPlayback();
         if (movie == null || movie.VideoPaths.Count == 0) return;
@@ -202,6 +280,11 @@ public sealed class TVController : MonoBehaviour
 
     public void ShowRemote()
     {
+        if (IsExternallyClaimed)
+        {
+            ModsUi.ShowToast($"This TV is currently in use by {externalOwner}.");
+            return;
+        }
         if (BoxroomTvApi.IsSynchronizedPlaybackActive)
             BoxroomTvApi.StopSynchronizedPlayback();
         string title = videos.Count == 0 ? "No video loaded" : DisplayTitle(videos[currentIndex]);
@@ -456,7 +539,12 @@ public sealed class TVController : MonoBehaviour
     private void Update()
     {
         RefreshLiveScreenMaterial();
-        if (temporaryLeader != null)
+        if (IsExternallyClaimed)
+        {
+            if (externalTexture != null && screenMaterial?.mainTexture != externalTexture)
+                ApplyScreen();
+        }
+        else if (temporaryLeader != null)
         {
             Texture mirrored = ActivePlaybackTexture;
             if (powered && mirrored != null && screenMaterial?.mainTexture != mirrored)
@@ -475,7 +563,7 @@ public sealed class TVController : MonoBehaviour
         }
 
         saveTimer += Time.deltaTime;
-        if (!temporaryPlayback && videos.Count > 0 && saveTimer >= 5f) { saveTimer = 0; SaveState(); }
+        if (!temporaryPlayback && !IsExternallyClaimed && videos.Count > 0 && saveTimer >= 5f) { saveTimer = 0; SaveState(); }
         if (!Core.AmbientGlow.Value || !powered || ActivePlaybackTexture == null) return;
         glowTimer += Time.deltaTime;
         if (glowTimer >= 0.12f) { glowTimer = 0; SampleGlow(); }
@@ -485,7 +573,12 @@ public sealed class TVController : MonoBehaviour
     {
         RefreshLiveScreenMaterial();
         if (screenMaterial == null) return;
-        if (!powered || videos.Count == 0)
+        if (IsExternallyClaimed)
+        {
+            screenMaterial.mainTexture = externalTexture != null ? externalTexture : Texture2D.blackTexture;
+            RestoreIdleTextureMapping();
+        }
+        else if (!powered || videos.Count == 0)
         {
             screenMaterial.mainTexture = Texture2D.blackTexture;
             RestoreIdleTextureMapping();
@@ -518,7 +611,9 @@ public sealed class TVController : MonoBehaviour
 
     private void ApplyGlow()
     {
-        if (glow != null) glow.intensity = Core.AmbientGlow.Value && powered && videos.Count > 0 ? Mathf.Max(0.3f, brightness * 1.2f) : 0f;
+        if (glow != null) glow.intensity = Core.AmbientGlow.Value &&
+            ((IsExternallyClaimed && externalTexture != null) || (powered && videos.Count > 0))
+            ? Mathf.Max(0.3f, brightness * 1.2f) : 0f;
     }
 
     private void SampleGlow()
@@ -540,7 +635,9 @@ public sealed class TVController : MonoBehaviour
     }
 
     private string FormatTime() => player?.isPrepared == true ? $"{Format(player.time)} / {Format(player.length)}" : "Not ready";
-    private Texture ActivePlaybackTexture => temporaryLeader != null ? temporaryLeader.player?.texture : player?.texture;
+    private Texture ActivePlaybackTexture => IsExternallyClaimed
+        ? externalTexture
+        : temporaryLeader != null ? temporaryLeader.player?.texture : player?.texture;
     private static string Format(double seconds) => $"{Math.Floor(seconds / 60):0}:{Math.Floor(seconds % 60):00}";
 
     private void RestoreState()
@@ -566,7 +663,7 @@ public sealed class TVController : MonoBehaviour
 
     private void SaveState()
     {
-        if (temporaryPlayback) return;
+        if (temporaryPlayback || IsExternallyClaimed) return;
         if (string.IsNullOrWhiteSpace(stateKey)) return;
         TVStateStore.Save(stateKey, new TVSaveEntry
         {
@@ -578,6 +675,9 @@ public sealed class TVController : MonoBehaviour
 
     private void OnDestroy()
     {
+        activeExternalClaim = 0;
+        externalSnapshot = null;
+        externalTexture = null;
         SaveState();
         All.Remove(this);
         if (glowSample != null) { glowSample.Release(); Destroy(glowSample); }

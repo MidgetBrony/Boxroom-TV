@@ -1,5 +1,7 @@
 using Boxroom_TV.TV;
 using MelonLoader;
+using SteamShelf;
+using SteamShelf.Placeables;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,13 +18,36 @@ public static class BoxroomTvApi
 
     public static bool IsSynchronizedPlaybackActive => activeSession != null;
 
+    /// <summary>
+    /// Temporarily grants one supported native screen to another mod. The TV's
+    /// existing Boxroom-TV playback is paused and restored when the lease ends.
+    /// A screen already leased by another owner cannot be claimed again.
+    /// </summary>
+    public static bool TryClaimDisplay(GameImagePainter painter, PlacementTag tag,
+        string ownerId, string displayName, out BoxroomTvDisplayLease lease)
+    {
+        lease = null;
+        if (painter == null || tag == null || string.IsNullOrWhiteSpace(ownerId)) return false;
+
+        TVController controller = TVController.For(painter, tag);
+        if (controller == null || controller.IsExternallyClaimed) return false;
+
+        StopSynchronizedPlayback();
+        if (!controller.TryBeginExternalClaim(ownerId, displayName, out int token))
+            return false;
+
+        lease = new BoxroomTvDisplayLease(controller, token, ownerId);
+        return true;
+    }
+
     /// <summary>Temporarily plays one source on every supported TV, CRT, and monitor.</summary>
     public static int PlaySynchronized(string source, string title, float durationSeconds = 60f)
     {
         if (string.IsNullOrWhiteSpace(source)) return 0;
         StopSynchronizedPlayback();
 
-        List<TVController> displays = TVController.DiscoverAll();
+        List<TVController> displays = TVController.DiscoverAll()
+            .Where(display => !display.IsExternallyClaimed).ToList();
         if (displays.Count == 0) return 0;
         Camera camera = Camera.main;
         TVController audioDisplay = camera == null
@@ -68,5 +93,35 @@ public static class BoxroomTvApi
 
         internal TVController Controller { get; }
         internal TVPlaybackSnapshot Snapshot { get; }
+    }
+}
+
+/// <summary>A temporary, exclusive claim on one BOXROOM television or monitor.</summary>
+public sealed class BoxroomTvDisplayLease : IDisposable
+{
+    private TVController controller;
+    private readonly int token;
+
+    internal BoxroomTvDisplayLease(TVController controller, int token, string ownerId)
+    {
+        this.controller = controller;
+        this.token = token;
+        OwnerId = ownerId;
+    }
+
+    public string OwnerId { get; }
+    public bool IsActive => controller != null && controller.IsExternalClaimActive(token);
+    public Bounds ScreenBounds => controller != null ? controller.ClaimedScreenBounds : default;
+    public Vector3 ScreenCenter => ScreenBounds.center;
+    public Vector3 ScreenForward => controller != null ? controller.ClaimedScreenForward : Vector3.forward;
+
+    /// <summary>Updates the texture displayed by the current owner.</summary>
+    public bool SetTexture(Texture texture) => controller != null && controller.SetExternalTexture(token, texture);
+
+    public void Dispose()
+    {
+        TVController claimed = controller;
+        controller = null;
+        claimed?.ReleaseExternalClaim(token);
     }
 }
