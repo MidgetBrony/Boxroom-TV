@@ -9,7 +9,7 @@
     <AssemblyName>Boxroom_TV</AssemblyName>
     <AssemblyVersion>4.0.1.0</AssemblyVersion>
     <FileVersion>4.0.1.0</FileVersion>
-    <InformationalVersion>4.0.1-beta.2</InformationalVersion>
+    <InformationalVersion>4.0.1-beta.3</InformationalVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>
