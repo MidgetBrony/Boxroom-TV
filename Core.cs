@@ -1,6 +1,5 @@
 using Boxroom_TV.TV;
 using Boxroom_TV.Videos;
-using HarmonyLib;
 using MelonLoader;
 using ModsPanel;
 using SteamShelf;
@@ -39,7 +38,6 @@ public sealed class Core : MelonMod
         AmbientGlow = preferences.CreateEntry("AmbientGlow", true, "Ambient screen glow");
         ResumePlayback = preferences.CreateEntry("ResumePlayback", true, "Resume playback");
 
-        HarmonyInstance.PatchAll(typeof(Core).Assembly);
         RegisterSettings();
         LoggerInstance.Msg("Boxroom-TV 4 initialized with native BOXROOM Video media, VLC, and ModsPanel.");
     }
