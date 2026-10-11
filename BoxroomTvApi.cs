@@ -40,6 +40,16 @@ public static class BoxroomTvApi
         return true;
     }
 
+    /// <summary>Returns the currently focused external display owner to room controls.</summary>
+    public static bool TryReturnFocusedDisplay() => TVController.TryReturnFocusedExternalClaim();
+
+    /// <summary>Focuses the external owner of the specified claimed display.</summary>
+    public static bool TryFocusDisplay(GameImagePainter painter, PlacementTag tag)
+    {
+        TVController controller = TVController.For(painter, tag);
+        return controller != null && controller.TryFocusExternalClaim();
+    }
+
     /// <summary>Temporarily plays one source on every supported TV, CRT, and monitor.</summary>
     public static int PlaySynchronized(string source, string title, float durationSeconds = 60f)
     {
@@ -115,8 +125,43 @@ public sealed class BoxroomTvDisplayLease : IDisposable
     public Vector3 ScreenCenter => ScreenBounds.center;
     public Vector3 ScreenForward => controller != null ? controller.ClaimedScreenForward : Vector3.forward;
 
+    /// <summary>
+    /// Projects a world-space ray onto the claimed screen and returns normalized
+    /// screen coordinates with (0,0) at the lower-left and (1,1) at the upper-right.
+    /// </summary>
+    public bool TryProjectPointer(Ray ray, out Vector2 screenPosition)
+    {
+        screenPosition = default;
+        return controller != null && controller.TryProjectClaimedScreenPointer(ray, out screenPosition);
+    }
+
+    /// <summary>Returns the world position represented by normalized screen coordinates.</summary>
+    public bool TryGetPointerWorldPosition(Vector2 screenPosition, out Vector3 worldPosition)
+    {
+        worldPosition = default;
+        return controller != null && controller.TryGetClaimedScreenWorldPosition(screenPosition, out worldPosition);
+    }
+
     /// <summary>Updates the texture displayed by the current owner.</summary>
     public bool SetTexture(Texture texture) => controller != null && controller.SetExternalTexture(token, texture);
+
+    /// <summary>
+    /// Updates the texture displayed by the current owner and optionally flips
+    /// it vertically relative to the screen's native UV mapping.
+    /// </summary>
+    public bool SetTexture(Texture texture, bool flipVertically) =>
+        controller != null && controller.SetExternalTexture(token, texture, flipVertically);
+
+    /// <summary>
+    /// Registers this display owner's focus lifecycle with Boxroom-TV. F2 can
+    /// then return from the focused owner, or focus this owner when the player
+    /// looks at its claimed screen. An optional hold action preserves power-off
+    /// behavior for in-process owners such as BR-Libretro.
+    /// </summary>
+    public bool RegisterFocusHandlers(Func<bool> isFocused, Action focus, Action returnToRoom,
+        Action hold = null, float holdSeconds = 1.25f) =>
+        controller != null && controller.SetExternalFocusHandlers(
+            token, isFocused, focus, returnToRoom, hold, holdSeconds);
 
     public void Dispose()
     {

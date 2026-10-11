@@ -42,7 +42,13 @@ public sealed class TVController : MonoBehaviour
     private TVController temporaryLeader;
     private TVPlaybackSnapshot externalSnapshot;
     private Texture externalTexture;
+    private bool externalTextureFlipVertically;
     private string externalOwner;
+    private Func<bool> externalIsFocused;
+    private Action externalFocus;
+    private Action externalReturnToRoom;
+    private Action externalHold;
+    private float externalHoldSeconds = 1.25f;
     private int externalClaimGeneration;
     private int activeExternalClaim;
     private string networkUrl = string.Empty;
@@ -80,6 +86,54 @@ public sealed class TVController : MonoBehaviour
         ? targetRenderer.transform.forward
         : transform.forward;
 
+    internal bool TryProjectClaimedScreenPointer(Ray worldRay, out Vector2 screenPosition)
+    {
+        screenPosition = default;
+        if (targetRenderer == null) return false;
+
+        Mesh mesh = targetRenderer is SkinnedMeshRenderer skinned
+            ? skinned.sharedMesh
+            : targetRenderer.GetComponent<MeshFilter>()?.sharedMesh;
+        if (mesh == null || materialIndex < 0 || materialIndex >= mesh.subMeshCount) return false;
+
+        Bounds screen = mesh.GetSubMesh(materialIndex).bounds;
+        Transform screenTransform = targetRenderer.transform;
+        Vector3 origin = screenTransform.InverseTransformPoint(worldRay.origin);
+        Vector3 direction = screenTransform.InverseTransformDirection(worldRay.direction);
+        if (Mathf.Abs(direction.z) < 0.00001f) return false;
+
+        float distance = (screen.center.z - origin.z) / direction.z;
+        if (distance < 0f) return false;
+        Vector3 point = origin + direction * distance;
+        if (screen.size.x <= 0.00001f || screen.size.y <= 0.00001f ||
+            point.x < screen.min.x || point.x > screen.max.x ||
+            point.y < screen.min.y || point.y > screen.max.y)
+            return false;
+
+        screenPosition = new Vector2(
+            Mathf.InverseLerp(screen.min.x, screen.max.x, point.x),
+            Mathf.InverseLerp(screen.min.y, screen.max.y, point.y));
+        return true;
+    }
+
+    internal bool TryGetClaimedScreenWorldPosition(Vector2 screenPosition, out Vector3 worldPosition)
+    {
+        worldPosition = default;
+        if (targetRenderer == null) return false;
+        Mesh mesh = targetRenderer is SkinnedMeshRenderer skinned
+            ? skinned.sharedMesh
+            : targetRenderer.GetComponent<MeshFilter>()?.sharedMesh;
+        if (mesh == null || materialIndex < 0 || materialIndex >= mesh.subMeshCount) return false;
+
+        Bounds screen = mesh.GetSubMesh(materialIndex).bounds;
+        Vector3 local = new(
+            Mathf.Lerp(screen.min.x, screen.max.x, Mathf.Clamp01(screenPosition.x)),
+            Mathf.Lerp(screen.min.y, screen.max.y, Mathf.Clamp01(screenPosition.y)),
+            screen.center.z);
+        worldPosition = targetRenderer.transform.TransformPoint(local);
+        return true;
+    }
+
     public static TVController For(GameImagePainter painter, SteamShelf.Placeables.PlacementTag tag)
     {
         if (!TVDisplay.TryGet(painter, tag, out TVDisplay display)) return null;
@@ -104,6 +158,22 @@ public sealed class TVController : MonoBehaviour
         return All.Where(controller => controller != null && controller.gameObject.activeInHierarchy).Distinct().ToList();
     }
 
+    internal static bool TryReturnFocusedExternalClaim()
+    {
+        foreach (TVController controller in All.ToArray())
+            if (controller != null && controller.IsExternalFocusActive && controller.TryReturnExternalClaim())
+                return true;
+        return false;
+    }
+
+    internal static bool TryHoldFocusedExternalClaim(float heldSeconds)
+    {
+        foreach (TVController controller in All.ToArray())
+            if (controller != null && controller.IsExternalFocusActive && controller.TryHoldExternalClaim(heldSeconds))
+                return true;
+        return false;
+    }
+
     internal TVPlaybackSnapshot CaptureSnapshot() => new()
     {
         Videos = new List<string>(videos),
@@ -124,6 +194,7 @@ public sealed class TVController : MonoBehaviour
         externalSnapshot = CaptureSnapshot();
         player?.Pause();
         externalTexture = null;
+        externalTextureFlipVertically = false;
         externalOwner = string.IsNullOrWhiteSpace(displayName) ? ownerId : displayName;
         token = activeExternalClaim = ++externalClaimGeneration;
         ApplyScreen();
@@ -134,10 +205,71 @@ public sealed class TVController : MonoBehaviour
 
     internal bool IsExternalClaimActive(int token) => token != 0 && token == activeExternalClaim;
 
-    internal bool SetExternalTexture(int token, Texture texture)
+    private bool IsExternalFocusActive
+    {
+        get
+        {
+            if (!IsExternallyClaimed || externalIsFocused == null) return false;
+            try { return externalIsFocused(); }
+            catch (Exception exception)
+            {
+                MelonLogger.Warning($"[Boxroom-TV] Focus-state callback for '{externalOwner}' failed: {exception.Message}");
+                return false;
+            }
+        }
+    }
+
+    internal bool SetExternalFocusHandlers(int token, Func<bool> isFocused, Action focus,
+        Action returnToRoom, Action hold, float holdSeconds)
+    {
+        if (!IsExternalClaimActive(token) || isFocused == null || focus == null || returnToRoom == null)
+            return false;
+        externalIsFocused = isFocused;
+        externalFocus = focus;
+        externalReturnToRoom = returnToRoom;
+        externalHold = hold;
+        externalHoldSeconds = Mathf.Max(0.5f, holdSeconds);
+        return true;
+    }
+
+    internal bool TryFocusExternalClaim()
+    {
+        if (!IsExternallyClaimed || externalFocus == null || IsExternalFocusActive) return false;
+        try { externalFocus(); return true; }
+        catch (Exception exception)
+        {
+            MelonLogger.Warning($"[Boxroom-TV] Could not focus '{externalOwner}': {exception.Message}");
+            return false;
+        }
+    }
+
+    private bool TryReturnExternalClaim()
+    {
+        if (externalReturnToRoom == null) return false;
+        try { externalReturnToRoom(); return true; }
+        catch (Exception exception)
+        {
+            MelonLogger.Warning($"[Boxroom-TV] Could not return from '{externalOwner}': {exception.Message}");
+            return false;
+        }
+    }
+
+    private bool TryHoldExternalClaim(float heldSeconds)
+    {
+        if (externalHold == null || heldSeconds < externalHoldSeconds) return false;
+        try { externalHold(); return true; }
+        catch (Exception exception)
+        {
+            MelonLogger.Warning($"[Boxroom-TV] Hold action for '{externalOwner}' failed: {exception.Message}");
+            return false;
+        }
+    }
+
+    internal bool SetExternalTexture(int token, Texture texture, bool flipVertically = false)
     {
         if (!IsExternalClaimActive(token)) return false;
         externalTexture = texture;
+        externalTextureFlipVertically = flipVertically;
         ApplyScreen();
         ApplyGlow();
         return true;
@@ -151,7 +283,13 @@ public sealed class TVController : MonoBehaviour
         activeExternalClaim = 0;
         externalSnapshot = null;
         externalTexture = null;
+        externalTextureFlipVertically = false;
         externalOwner = null;
+        externalIsFocused = null;
+        externalFocus = null;
+        externalReturnToRoom = null;
+        externalHold = null;
+        externalHoldSeconds = 1.25f;
         RestoreSnapshot(snapshot);
         MelonLogger.Msg($"[Boxroom-TV] '{owner}' released TV '{stateKey}' and its previous state was restored.");
     }
@@ -576,7 +714,7 @@ public sealed class TVController : MonoBehaviour
         if (IsExternallyClaimed)
         {
             screenMaterial.mainTexture = externalTexture != null ? externalTexture : Texture2D.blackTexture;
-            RestoreIdleTextureMapping();
+            ApplyExternalTextureMapping();
         }
         else if (!powered || videos.Count == 0)
         {
@@ -600,6 +738,17 @@ public sealed class TVController : MonoBehaviour
     {
         screenMaterial.mainTextureScale = idleTextureScale;
         screenMaterial.mainTextureOffset = idleTextureOffset;
+    }
+
+    private void ApplyExternalTextureMapping()
+    {
+        if (!externalTextureFlipVertically)
+        {
+            RestoreIdleTextureMapping();
+            return;
+        }
+        screenMaterial.mainTextureScale = new Vector2(idleTextureScale.x, -idleTextureScale.y);
+        screenMaterial.mainTextureOffset = new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y);
     }
 
     private void RefreshLiveScreenMaterial()
@@ -678,6 +827,7 @@ public sealed class TVController : MonoBehaviour
         activeExternalClaim = 0;
         externalSnapshot = null;
         externalTexture = null;
+        externalTextureFlipVertically = false;
         SaveState();
         All.Remove(this);
         if (glowSample != null) { glowSample.Release(); Destroy(glowSample); }

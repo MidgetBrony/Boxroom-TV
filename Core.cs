@@ -11,7 +11,7 @@ using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.1", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.2-beta.1", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 [assembly: MelonAdditionalDependencies("ModsPanel")]
 
@@ -29,6 +29,8 @@ public sealed class Core : MelonMod
 
     private PlayerInteractionTool interactionTool;
     private bool primaryWasPressed;
+    private bool focusKeyWasDown, focusHoldTriggered;
+    private float focusKeyDownAt;
 
     public override void OnInitializeMelon()
     {
@@ -49,6 +51,8 @@ public sealed class Core : MelonMod
         if (interactionTool == null)
             interactionTool = UnityEngine.Object.FindFirstObjectByType<PlayerInteractionTool>();
 
+        HandleDisplayFocusKey();
+
         if (!Singleton<PlayerToolController>.HasInstance() ||
             !Singleton<PlayerToolController>.Instance.TryGetCurrentToolAsType(out PlayerInteractionTool activeInteractionTool) ||
             activeInteractionTool != interactionTool)
@@ -65,6 +69,29 @@ public sealed class Core : MelonMod
 
         if (Input.GetKeyDown(KeyCode.T) && !ModsUi.IsMenuOpen)
             TryOpenLookedAtTelevision();
+    }
+
+    private void HandleDisplayFocusKey()
+    {
+        bool down = Input.GetKey(KeyCode.F2);
+        if (down && !focusKeyWasDown)
+        {
+            focusKeyDownAt = Time.unscaledTime;
+            focusHoldTriggered = false;
+        }
+
+        if (down && !focusHoldTriggered &&
+            TVController.TryHoldFocusedExternalClaim(Time.unscaledTime - focusKeyDownAt))
+        {
+            focusHoldTriggered = true;
+        }
+        else if (!down && focusKeyWasDown && !focusHoldTriggered && !ModsUi.IsMenuOpen)
+        {
+            if (!BoxroomTvApi.TryReturnFocusedDisplay() &&
+                TryGetLookedAtTelevision(out GameImagePainter painter, out PlacementTag tag))
+                BoxroomTvApi.TryFocusDisplay(painter, tag);
+        }
+        focusKeyWasDown = down;
     }
 
     internal static void PostToMainThread(Action action)
