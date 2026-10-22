@@ -7,9 +7,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Boxroom_TV</RootNamespace>
     <AssemblyName>Boxroom_TV</AssemblyName>
-    <AssemblyVersion>4.0.2.0</AssemblyVersion>
-    <FileVersion>4.0.2.0</FileVersion>
-    <InformationalVersion>4.0.2</InformationalVersion>
+    <AssemblyVersion>4.0.3.0</AssemblyVersion>
+    <FileVersion>4.0.3.0</FileVersion>
+    <InformationalVersion>4.0.3</InformationalVersion>
     <DeployToGame Condition="'$(DeployToGame)' == ''">false</DeployToGame>
     <VlcUnityRepo Condition="'$(VlcUnityRepo)' == ''">$(MSBuildProjectDirectory)\..\vlc-unity</VlcUnityRepo>
     <LibVLCSharpRepo Condition="'$(LibVLCSharpRepo)' == ''">$(MSBuildProjectDirectory)\..\LibVLCSharp</LibVLCSharpRepo>
@@ -20,6 +20,7 @@
     <Reference Include="LibVLCSharp"><HintPath>$(LibVLCSharpRepo)\src\LibVLCSharp\bin\Release\netstandard2.0\LibVLCSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="FMODUnity"><HintPath>$(GamePath)\BOXROOM_Data\Managed\FMODUnity.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(GamePath)\BOXROOM_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AudioModule"><HintPath>$(GamePath)\BOXROOM_Data\Managed\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>

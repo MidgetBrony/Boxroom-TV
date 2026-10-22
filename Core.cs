@@ -11,7 +11,7 @@ using UnityEngine;
 using System;
 using System.Collections.Concurrent;
 
-[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.2", "MidgetBrony")]
+[assembly: MelonInfo(typeof(Boxroom_TV.Core), "Boxroom-TV", "4.0.3", "MidgetBrony")]
 [assembly: MelonGame("NestedLoop", "BOXROOM")]
 [assembly: MelonAdditionalDependencies("ModsPanel")]
 
@@ -46,6 +46,7 @@ public sealed class Core : MelonMod
 
     public override void OnUpdate()
     {
+        NativeVideoSettings.Tick();
         while (MainThreadActions.TryDequeue(out Action action))
             try { action(); } catch (Exception exception) { LoggerInstance.Error(exception.ToString()); }
         if (interactionTool == null)
@@ -131,7 +132,8 @@ public sealed class Core : MelonMod
 
     private static void RegisterSettings()
     {
-        ModsPanelApi.RegisterSection(OwnerId, "Boxroom-TV", 120).Clear()
+        ModSection settings = ModsPanelApi.RegisterSection(OwnerId, "Boxroom-TV", 120).Clear()
+            .AddLabel("playback-heading", "TV Playback")
             .AddSlider("volume", "Default TV volume", () => DefaultVolume.Value,
                 value => { DefaultVolume.Value = Mathf.Clamp01(value); MelonPreferences.Save(); }, 0f, 1f, false, "0%")
             .AddSlider("audio-distance", "TV audio distance", () => AudioDistance.Value,
@@ -143,7 +145,10 @@ public sealed class Core : MelonMod
             .AddLabel("vlc-status", "Playback is powered by the open-source VLC, LibVLCSharp, and VLC for Unity projects. Original media plays directly without conversion.")
             .AddLabel("credits", "Video playback credits: VideoLAN contributors, LibVLCSharp contributors, and VLC for Unity contributors. Licensed under LGPL 2.1 or later.")
             .AddLabel("help", "Uses BOXROOM's native Video cases, shelves, and Video Container. Recursive folders, NFO titles, seasons, VLC playback, audio/subtitle selection, and online playback are added by Boxroom-TV.");
+        NativeVideoSettings.Register(settings);
     }
+
+    public override void OnDeinitializeMelon() => NativeVideoSettings.Restore();
 
     internal static void ShowMovieHelp(VideoData movie)
     {

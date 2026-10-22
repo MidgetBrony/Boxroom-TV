@@ -5,11 +5,22 @@ Boxroom-TV extends BOXROOM's native Video system instead of registering a second
 ## Requirements
 
 - BOXROOM with MelonLoader
-- `ModsPanel.dll`
+- `ModsPanel.dll` version 2.7.3 or later
 - `Boxroom_TV.dll`
 - `LibVLCSharp.dll`, the VLC Unity native bridge, and the LibVLC 4 Windows runtime supplied by the Boxroom-TV manifest
 
 LocalWorkshop is not required by the current release because Boxroom-TV 4 does not ship custom TV furniture. It is the intended catalogue SDK if custom TV placeables are added later.
+
+## Playback settings
+
+Open **Media > Videos** and scroll below the native library controls to
+**TV Playback**. Default volume, audio distance, ambient screen glow and resume
+playback use the same saved preferences as before. The duplicate Boxroom-TV
+section is hidden from Mod Settings after the Video page is attached; if the
+native page cannot be found, the original section remains available.
+
+The native Video library controls retain their components and callbacks.
+Controller selection scrolls the combined page to the focused control.
 
 ## Movie library
 
