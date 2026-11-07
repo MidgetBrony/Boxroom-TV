@@ -14,6 +14,11 @@ namespace Boxroom_TV.TV;
 public sealed class TVController : MonoBehaviour
 {
     private static readonly List<TVController> All = new();
+    private const string BaseMapProperty = "_BaseMap";
+    private const string MainTextureProperty = "_MainTex";
+    private const string EmissionMapProperty = "_EmissionMap";
+    private const string EmissionColorProperty = "_EmissionColor";
+    private const string EmissionStrengthProperty = "_EmissionStrength";
 
     private Renderer targetRenderer;
     private int materialIndex;
@@ -713,31 +718,59 @@ public sealed class TVController : MonoBehaviour
         if (screenMaterial == null) return;
         if (IsExternallyClaimed)
         {
-            screenMaterial.mainTexture = externalTexture != null ? externalTexture : Texture2D.blackTexture;
+            ApplyScreenTexture(externalTexture != null ? externalTexture : Texture2D.blackTexture);
             ApplyExternalTextureMapping();
         }
         else if (!powered || videos.Count == 0)
         {
-            screenMaterial.mainTexture = Texture2D.blackTexture;
+            ApplyScreenTexture(Texture2D.blackTexture);
             RestoreIdleTextureMapping();
         }
         else if (ActivePlaybackTexture != null)
         {
-            screenMaterial.mainTexture = ActivePlaybackTexture;
+            ApplyScreenTexture(ActivePlaybackTexture);
             RestoreIdleTextureMapping();
         }
         else
         {
-            screenMaterial.mainTexture = idleTexture;
+            ApplyScreenTexture(idleTexture);
             RestoreIdleTextureMapping();
         }
-        if (screenMaterial.HasProperty("_EmissionStrength")) screenMaterial.SetFloat("_EmissionStrength", powered ? brightness : 0f);
+        ApplyScreenBrightness();
+    }
+
+    private void ApplyScreenTexture(Texture texture)
+    {
+        screenMaterial.mainTexture = texture;
+        if (screenMaterial.HasProperty(BaseMapProperty)) screenMaterial.SetTexture(BaseMapProperty, texture);
+        if (screenMaterial.HasProperty(MainTextureProperty)) screenMaterial.SetTexture(MainTextureProperty, texture);
+        if (screenMaterial.HasProperty(EmissionMapProperty)) screenMaterial.SetTexture(EmissionMapProperty, texture);
+    }
+
+    private void ApplyScreenBrightness()
+    {
+        bool visible = IsExternallyClaimed
+            ? externalTexture != null
+            : powered && videos.Count > 0;
+        float intensity = visible ? brightness : 0f;
+
+        // BOXROOM's older Screen shader exposes a scalar emission control.
+        if (screenMaterial.HasProperty(EmissionStrengthProperty))
+            screenMaterial.SetFloat(EmissionStrengthProperty, intensity);
+
+        // Native interactive TVs use URP/Lit. Their video must be bound as the
+        // emission map and driven through _EmissionColor to avoid room lighting
+        // making the screen nearly black.
+        if (screenMaterial.HasProperty(EmissionColorProperty))
+        {
+            screenMaterial.EnableKeyword("_EMISSION");
+            screenMaterial.SetColor(EmissionColorProperty, new Color(intensity, intensity, intensity, 1f));
+        }
     }
 
     private void RestoreIdleTextureMapping()
     {
-        screenMaterial.mainTextureScale = idleTextureScale;
-        screenMaterial.mainTextureOffset = idleTextureOffset;
+        ApplyScreenTextureMapping(idleTextureScale, idleTextureOffset);
     }
 
     private void ApplyExternalTextureMapping()
@@ -747,8 +780,25 @@ public sealed class TVController : MonoBehaviour
             RestoreIdleTextureMapping();
             return;
         }
-        screenMaterial.mainTextureScale = new Vector2(idleTextureScale.x, -idleTextureScale.y);
-        screenMaterial.mainTextureOffset = new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y);
+        ApplyScreenTextureMapping(
+            new Vector2(idleTextureScale.x, -idleTextureScale.y),
+            new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y));
+    }
+
+    private void ApplyScreenTextureMapping(Vector2 scale, Vector2 offset)
+    {
+        screenMaterial.mainTextureScale = scale;
+        screenMaterial.mainTextureOffset = offset;
+        SetTextureMappingIfPresent(BaseMapProperty, scale, offset);
+        SetTextureMappingIfPresent(MainTextureProperty, scale, offset);
+        SetTextureMappingIfPresent(EmissionMapProperty, scale, offset);
+    }
+
+    private void SetTextureMappingIfPresent(string property, Vector2 scale, Vector2 offset)
+    {
+        if (!screenMaterial.HasProperty(property)) return;
+        screenMaterial.SetTextureScale(property, scale);
+        screenMaterial.SetTextureOffset(property, offset);
     }
 
     private void RefreshLiveScreenMaterial()
@@ -847,3 +897,4 @@ internal sealed class TVPlaybackSnapshot
     internal bool Loop;
     internal bool WasPlaying;
 }
+
