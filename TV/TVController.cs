@@ -14,6 +14,13 @@ namespace Boxroom_TV.TV;
 public sealed class TVController : MonoBehaviour
 {
     private static readonly List<TVController> All = new();
+    private const string BaseMapProperty = "_BaseMap";
+    private const string BaseColorProperty = "_BaseColor";
+    private const string ColorProperty = "_Color";
+    private const string MainTextureProperty = "_MainTex";
+    private const string EmissionMapProperty = "_EmissionMap";
+    private const string EmissionColorProperty = "_EmissionColor";
+    private const string EmissionStrengthProperty = "_EmissionStrength";
 
     private Renderer targetRenderer;
     private int materialIndex;
@@ -454,8 +461,8 @@ public sealed class TVController : MonoBehaviour
             () => { showAdvancedRemote = !showAdvancedRemote; ShowRemote(); });
         if (showAdvancedRemote)
             menu.AddHeading("Advanced")
-                .AddSlider("Screen brightness", () => brightness,
-                    value => { brightness = value; ApplyScreen(); ApplyGlow(); SaveState(); },
+                .AddSlider("Picture brightness", () => brightness,
+                    value => { brightness = value; ApplyScreen(); SaveState(); },
                     0f, 3f, false, value => value.ToString("0.0"))
                 .AddSlider("Playback speed", () => player?.rate ?? 1f,
                     value => { if (player != null) player.rate = value; },
@@ -648,7 +655,7 @@ public sealed class TVController : MonoBehaviour
     private void NextFromRemote() { Next(); ShowRemote(); }
     private void Seek(double seconds) { if (player?.isPrepared == true) player.time = Math.Max(0, Math.Min(player.length, player.time + seconds)); SaveState(); }
     private void ChangeVolume(float delta) { volume = Mathf.Clamp01(volume + delta); SaveState(); ShowRemote(); }
-    private void ChangeBrightness(float delta) { brightness = Mathf.Clamp(brightness + delta, 0f, 3f); ApplyScreen(); ApplyGlow(); SaveState(); ShowRemote(); }
+    private void ChangeBrightness(float delta) { brightness = Mathf.Clamp(brightness + delta, 0f, 3f); ApplyScreen(); SaveState(); ShowRemote(); }
 
     private void TogglePower()
     {
@@ -713,31 +720,68 @@ public sealed class TVController : MonoBehaviour
         if (screenMaterial == null) return;
         if (IsExternallyClaimed)
         {
-            screenMaterial.mainTexture = externalTexture != null ? externalTexture : Texture2D.blackTexture;
+            ApplyScreenTexture(externalTexture != null ? externalTexture : Texture2D.blackTexture);
             ApplyExternalTextureMapping();
         }
         else if (!powered || videos.Count == 0)
         {
-            screenMaterial.mainTexture = Texture2D.blackTexture;
+            ApplyScreenTexture(Texture2D.blackTexture);
             RestoreIdleTextureMapping();
         }
         else if (ActivePlaybackTexture != null)
         {
-            screenMaterial.mainTexture = ActivePlaybackTexture;
+            ApplyScreenTexture(ActivePlaybackTexture);
             RestoreIdleTextureMapping();
         }
         else
         {
-            screenMaterial.mainTexture = idleTexture;
+            ApplyScreenTexture(idleTexture);
             RestoreIdleTextureMapping();
         }
-        if (screenMaterial.HasProperty("_EmissionStrength")) screenMaterial.SetFloat("_EmissionStrength", powered ? brightness : 0f);
+        ApplyScreenBrightness();
+    }
+
+    private void ApplyScreenTexture(Texture texture)
+    {
+        screenMaterial.mainTexture = texture;
+        if (screenMaterial.HasProperty(BaseMapProperty)) screenMaterial.SetTexture(BaseMapProperty, texture);
+        if (screenMaterial.HasProperty(MainTextureProperty)) screenMaterial.SetTexture(MainTextureProperty, texture);
+        if (screenMaterial.HasProperty(EmissionMapProperty)) screenMaterial.SetTexture(EmissionMapProperty, texture);
+    }
+
+    private void ApplyScreenBrightness()
+    {
+        bool visible = IsExternallyClaimed
+            ? externalTexture != null
+            : powered && videos.Count > 0;
+        // Treat the remote value as picture exposure rather than a linear light
+        // multiplier. A cubic curve keeps 1.0 neutral while making 3.0 visibly
+        // overexposed instead of merely increasing the room's reflected glow.
+        float intensity = visible ? brightness * brightness * brightness : 0f;
+
+        Color pictureColor = new(intensity, intensity, intensity, 1f);
+        if (screenMaterial.HasProperty(BaseColorProperty))
+            screenMaterial.SetColor(BaseColorProperty, pictureColor);
+        if (screenMaterial.HasProperty(ColorProperty))
+            screenMaterial.SetColor(ColorProperty, pictureColor);
+
+        // BOXROOM's older Screen shader exposes a scalar emission control.
+        if (screenMaterial.HasProperty(EmissionStrengthProperty))
+            screenMaterial.SetFloat(EmissionStrengthProperty, intensity);
+
+        // Native interactive TVs use URP/Lit. Their video must be bound as the
+        // emission map and driven through _EmissionColor to avoid room lighting
+        // making the screen nearly black.
+        if (screenMaterial.HasProperty(EmissionColorProperty))
+        {
+            screenMaterial.EnableKeyword("_EMISSION");
+            screenMaterial.SetColor(EmissionColorProperty, pictureColor);
+        }
     }
 
     private void RestoreIdleTextureMapping()
     {
-        screenMaterial.mainTextureScale = idleTextureScale;
-        screenMaterial.mainTextureOffset = idleTextureOffset;
+        ApplyScreenTextureMapping(idleTextureScale, idleTextureOffset);
     }
 
     private void ApplyExternalTextureMapping()
@@ -747,8 +791,25 @@ public sealed class TVController : MonoBehaviour
             RestoreIdleTextureMapping();
             return;
         }
-        screenMaterial.mainTextureScale = new Vector2(idleTextureScale.x, -idleTextureScale.y);
-        screenMaterial.mainTextureOffset = new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y);
+        ApplyScreenTextureMapping(
+            new Vector2(idleTextureScale.x, -idleTextureScale.y),
+            new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y));
+    }
+
+    private void ApplyScreenTextureMapping(Vector2 scale, Vector2 offset)
+    {
+        screenMaterial.mainTextureScale = scale;
+        screenMaterial.mainTextureOffset = offset;
+        SetTextureMappingIfPresent(BaseMapProperty, scale, offset);
+        SetTextureMappingIfPresent(MainTextureProperty, scale, offset);
+        SetTextureMappingIfPresent(EmissionMapProperty, scale, offset);
+    }
+
+    private void SetTextureMappingIfPresent(string property, Vector2 scale, Vector2 offset)
+    {
+        if (!screenMaterial.HasProperty(property)) return;
+        screenMaterial.SetTextureScale(property, scale);
+        screenMaterial.SetTextureOffset(property, offset);
     }
 
     private void RefreshLiveScreenMaterial()
@@ -762,7 +823,7 @@ public sealed class TVController : MonoBehaviour
     {
         if (glow != null) glow.intensity = Core.AmbientGlow.Value &&
             ((IsExternallyClaimed && externalTexture != null) || (powered && videos.Count > 0))
-            ? Mathf.Max(0.3f, brightness * 1.2f) : 0f;
+            ? 1.2f : 0f;
     }
 
     private void SampleGlow()
@@ -847,4 +908,3 @@ internal sealed class TVPlaybackSnapshot
     internal bool Loop;
     internal bool WasPlaying;
 }
-
