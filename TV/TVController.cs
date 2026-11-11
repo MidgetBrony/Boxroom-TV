@@ -791,9 +791,15 @@ public sealed class TVController : MonoBehaviour
             RestoreIdleTextureMapping();
             return;
         }
+
+        // Capture textures use a top-left origin. Keep the final vertical scale
+        // negative instead of toggling the display's idle scale: BOXROOM 1.0's
+        // RGB Monitor already ships with a negative Y scale, so toggling it made
+        // captured games upside down while displays with a positive scale worked.
         ApplyScreenTextureMapping(
-            new Vector2(idleTextureScale.x, -idleTextureScale.y),
-            new Vector2(idleTextureOffset.x, idleTextureOffset.y + idleTextureScale.y));
+            new Vector2(idleTextureScale.x, -Mathf.Abs(idleTextureScale.y)),
+            new Vector2(idleTextureOffset.x,
+                idleTextureOffset.y + Mathf.Max(idleTextureScale.y, 0f)));
     }
 
     private void ApplyScreenTextureMapping(Vector2 scale, Vector2 offset)
